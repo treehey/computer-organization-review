@@ -3713,6 +3713,380 @@ const PipelineSpaceTimeViz = () => {
     );
 };
 
+// --- 组件开始：Ch6 结构冒险可视化 (v3.0 - 中文对齐修复版) ---
+const StructuralHazardViz = () => {
+  const [arch, setArch] = useState<"unified" | "separate">("unified"); // unified=统一, separate=独立
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [cycle, setCycle] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // 指令序列
+  const instructions = [
+    { id: "lw", asm: "lw $t0, 0($t1)", color: "bg-amber-100 text-amber-700 border-amber-300", desc: "访存指令" },
+    { id: "add", asm: "add $t2, $t3, $t4", color: "bg-blue-100 text-blue-700 border-blue-300", desc: "运算指令" },
+    { id: "sub", asm: "sub $t5, $t6, $t7", color: "bg-blue-100 text-blue-700 border-blue-300", desc: "运算指令" },
+    { id: "and", asm: "and $t8, $t9, $0", color: "bg-purple-100 text-purple-700 border-purple-300", desc: "冲突受害者" }, 
+    { id: "or", asm: "or $s1, $s2, $s3", color: "bg-slate-100 text-slate-700 border-slate-300", desc: "后续指令" },
+  ];
+
+  // 状态机
+  const [pipeline, setPipeline] = useState<(string | null)[]>([null, null, null, null, null]);
+  const [stall, setStall] = useState(false);
+
+  const reset = () => {
+    setIsPlaying(false);
+    setCycle(0);
+    setPipeline([null, null, null, null, null]);
+    setStall(false);
+  };
+
+  const openModal = () => {
+    setIsModalOpen(true);
+    reset();
+  };
+
+  // 核心模拟
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setCycle(c => {
+          if (c >= 9) { setIsPlaying(false); return c; }
+          const nextCycle = c + 1;
+          
+          setPipeline(prev => {
+            const nextPipe = [...prev];
+            let isStalling = false;
+
+            // 1. 流动逻辑 (后级先动)
+            nextPipe[4] = prev[3]; // WB
+            nextPipe[3] = prev[2]; // MEM
+            nextPipe[2] = prev[1]; // EX
+            
+            // 2. 冒险检测逻辑
+            // 冲突发生在 Cycle 4: LW 在 MEM (index 3), AND 想要进 IF (index 0)
+            
+            if (arch === "unified" && nextCycle === 4) {
+                // 发生结构冒险！
+                isStalling = true;
+                nextPipe[1] = prev[1]; // ID 阶段保持 (Stall)
+                nextPipe[0] = null;    // IF 阶段插入气泡 (无法取指)
+            } else if (arch === "unified" && nextCycle === 5 && prev[3] === "lw") {
+                 // 冲突结束，恢复流动
+                 nextPipe[2] = prev[1]; // ID -> EX
+                 nextPipe[1] = null;    // 刚才的气泡流到了 ID
+                 nextPipe[0] = "and";   // 终于取到了 AND
+            } else {
+                // 无冲突 / 正常流动
+                nextPipe[1] = prev[0]; // ID <- IF
+                
+                // 取指逻辑
+                if (arch === "separate") {
+                    if (nextCycle <= 5) nextPipe[0] = instructions[nextCycle-1].id;
+                    else nextPipe[0] = null;
+                } else {
+                    // 统一存储器的时序调整
+                    if (nextCycle < 4) nextPipe[0] = instructions[nextCycle-1].id;
+                    else if (nextCycle === 4) nextPipe[0] = null; // Stall cycle
+                    else if (nextCycle === 5) nextPipe[0] = "and";
+                    else if (nextCycle === 6) nextPipe[0] = "or";
+                    else nextPipe[0] = null;
+                }
+            }
+
+            setStall(isStalling);
+            return nextPipe;
+          });
+          return nextCycle;
+        });
+      }, 1500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying, arch]);
+
+  const getInstrColor = (id: string | null) => {
+    const item = instructions.find(i => i.id === id);
+    return item ? item.color : "bg-slate-50 text-slate-300 border-slate-200";
+  };
+
+  // --- 1. 简约卡片 ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-red-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-600" />
+          结构冒险 (Structural)
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-red-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {/* 端口状态 */}
+        <div className={`flex items-center justify-between p-3 rounded border transition-colors ${stall ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-100"}`}>
+            <span className="text-xs font-bold text-slate-600">存储器端口</span>
+            <span className={`text-xs font-mono font-bold ${stall ? "text-red-600" : "text-emerald-600"}`}>
+                {stall ? "冲突阻塞 (Stall)" : "正常 / 并行"}
+            </span>
+        </div>
+
+        {/* 迷你流水线 */}
+        <div className="flex gap-1">
+            {["IF","ID","EX","MEM","WB"].map((stage, i) => (
+                <div key={stage} className={`flex-1 h-10 rounded border flex items-center justify-center text-[10px] font-bold transition-all ${getInstrColor(pipeline[i])}`}>
+                    {pipeline[i] || "-"}
+                </div>
+            ))}
+        </div>
+
+        <button onClick={openModal} className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs rounded-lg flex items-center justify-center gap-2 transition-all border border-red-200 font-bold">
+          <Play className="w-3 h-3 fill-current" /> 演示资源冲突
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 2. 详细浮窗 ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* 头部 */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-red-100 rounded-lg"><AlertTriangle className="w-6 h-6 text-red-600"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">结构冒险 (Structural Hazard)</h3>
+                    <div className="text-xs text-slate-500 font-medium">演示 统一存储器(冲突) vs 独立存储器(并行) 的区别</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+                <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button onClick={() => { setArch("unified"); reset(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${arch === "unified" ? "bg-white text-red-600 shadow-sm" : "text-slate-500"}`}>
+                        统一存储器 (有冒险)
+                    </button>
+                    <button onClick={() => { setArch("separate"); reset(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${arch === "separate" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500"}`}>
+                        独立存储器 (无冒险)
+                    </button>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+            </div>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 flex flex-col gap-6">
+            
+            {/* SVG 可视化核心 */}
+            <div className="relative w-full aspect-[2.5/1] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden select-none ring-4 ring-slate-50">
+                <div className="absolute inset-0" style={{backgroundImage: 'linear-gradient(#E2E8F0 1px, transparent 1px), linear-gradient(90deg, #E2E8F0 1px, transparent 1px)', backgroundSize: '20px 20px', opacity: 0.5}}></div>
+
+                <svg viewBox="0 0 1000 400" className="w-full h-full relative z-10">
+                    <defs>
+                        <marker id="arrow-gray" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#94A3B8" />
+                        </marker>
+                        <marker id="arrow-red" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#EF4444" />
+                        </marker>
+                        <marker id="arrow-green" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#10B981" />
+                        </marker>
+                        <filter id="conflict-glow">
+                            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                            <feMerge>
+                                <feMergeNode in="coloredBlur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+
+                    {/* 1. 流水线阶段标记 (顶部) */}
+                    <g fontSize="12" fontWeight="bold" fill="#64748B" textAnchor="middle">
+                        <text x="100" y="40">IF 取指</text>
+                        <text x="300" y="40">ID 译码</text>
+                        <text x="500" y="40">EX 执行</text>
+                        <text x="700" y="40">MEM 访存</text>
+                        <text x="900" y="40">WB 写回</text>
+                        {/* 垂直虚线分隔 */}
+                        <line x1="200" y1="50" x2="200" y2="380" stroke="#E2E8F0" strokeDasharray="4,4"/>
+                        <line x1="400" y1="50" x2="400" y2="380" stroke="#E2E8F0" strokeDasharray="4,4"/>
+                        <line x1="600" y1="50" x2="600" y2="380" stroke="#E2E8F0" strokeDasharray="4,4"/>
+                        <line x1="800" y1="50" x2="800" y2="380" stroke="#E2E8F0" strokeDasharray="4,4"/>
+                    </g>
+
+                    {/* 2. 硬件资源 (Fixed Alignment) */}
+                    <g stroke="#94A3B8" strokeWidth="2" fill="white">
+                        {/* PC */}
+                        <rect x="80" y="200" width="40" height="40" rx="4" />
+                        <text x="100" y="225" textAnchor="middle" fill="#475569" stroke="none" fontSize="10" fontWeight="bold">PC</text>
+
+                        {/* Regs */}
+                        <rect x="260" y="180" width="80" height="80" rx="4" />
+                        <text x="300" y="225" textAnchor="middle" fill="#475569" stroke="none" fontSize="12" fontWeight="bold">Regs</text>
+
+                        {/* ALU */}
+                        <path d="M460 180 L540 200 L540 240 L460 260 L460 230 L450 220 L460 210 Z" />
+                        <text x="510" y="225" textAnchor="middle" fill="#475569" stroke="none" fontSize="12" fontWeight="bold">ALU</text>
+
+                        {/* 关键：存储器布局 */}
+                        {arch === "separate" ? (
+                            // 独立存储器模式：两个分开的块
+                            <>
+                                <rect x="140" y="180" width="80" height="80" rx="4" fill="#F0FDF4" stroke="#16A34A" />
+                                <text x="180" y="215" textAnchor="middle" fill="#166534" stroke="none" fontSize="10" fontWeight="bold">IM</text>
+                                <text x="180" y="235" textAnchor="middle" fill="#166534" stroke="none" fontSize="9">指令存储</text>
+                                
+                                <rect x="660" y="180" width="80" height="80" rx="4" fill="#EFF6FF" stroke="#2563EB" />
+                                <text x="700" y="215" textAnchor="middle" fill="#1E40AF" stroke="none" fontSize="10" fontWeight="bold">DM</text>
+                                <text x="700" y="235" textAnchor="middle" fill="#1E40AF" stroke="none" fontSize="9">数据存储</text>
+                            </>
+                        ) : (
+                            // 统一存储器模式：底部大块
+                            <g>
+                                <rect x="300" y="320" width="400" height="60" rx="6" fill="#FFF1F2" stroke="#BE123C" />
+                                <text x="500" y="355" textAnchor="middle" fill="#881337" stroke="none" fontSize="14" fontWeight="bold">统一存储器 (Unified Memory)</text>
+                                {/* 端口点 */}
+                                <circle cx="400" cy="320" r="4" fill="#BE123C" stroke="none"/>
+                                <circle cx="600" cy="320" r="4" fill="#BE123C" stroke="none"/>
+                            </g>
+                        )}
+                    </g>
+
+                    {/* 3. 连线 (Wires) - 精确对齐 */}
+                    <g fill="none" strokeWidth="2">
+                        {/* IF 阶段连线 */}
+                        {arch === "separate" ? (
+                            // Separate: PC -> IM
+                            <path d="M120 220 L140 220" stroke="#10B981" markerEnd="url(#arrow-green)" />
+                        ) : (
+                            // Unified: PC -> Bus -> Unified Mem
+                            // 冲突时变红
+                            <path d="M120 220 L140 220 L140 330 L300 330" 
+                                  stroke={stall ? "#EF4444" : "#10B981"} 
+                                  strokeDasharray={stall ? "5,5" : "0"}
+                                  markerEnd={stall ? "url(#arrow-red)" : "url(#arrow-green)"} 
+                                  className={stall ? "animate-pulse" : ""}
+                            />
+                        )}
+
+                        {/* IM/Mem -> ID */}
+                        {arch === "separate" ? (
+                            <path d="M220 220 L260 220" stroke="#94A3B8" />
+                        ) : (
+                            // Unified Mem -> ID
+                            <path d="M300 320 L300 280 L240 280 L240 220 L260 220" stroke="#E2E8F0" />
+                        )}
+
+                        {/* EX -> MEM */}
+                        <path d="M540 220 L660 220" stroke="#94A3B8" />
+
+                        {/* MEM 阶段连线 */}
+                        {arch === "unified" && (
+                            // Unified: ALU Out -> Bus -> Unified Mem
+                            <path d="M600 220 L600 330 L600 330" 
+                                  stroke={pipeline[3] === "lw" ? "#F59E0B" : "#E2E8F0"} 
+                                  strokeWidth={pipeline[3] === "lw" ? 3 : 2}
+                                  markerEnd="url(#arrow-gray)" 
+                            />
+                        )}
+                    </g>
+
+                    {/* 4. 冲突特效 (Conflict!) */}
+                    {stall && (
+                        <g transform="translate(500, 290)" className="animate-bounce">
+                            <text x="0" y="0" textAnchor="middle" fontSize="28" fill="#EF4444" fontWeight="bold" filter="url(#conflict-glow)">⚡</text>
+                            <text x="0" y="20" textAnchor="middle" fontSize="12" fill="#EF4444" fontWeight="bold">资源冲突!</text>
+                        </g>
+                    )}
+
+                    {/* 5. 动态指令块 (Aligned) */}
+                    {/* IF Block */}
+                    <g transform="translate(60, 80)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[0])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">
+                            {stall ? "等待 (Stall)" : (pipeline[0] ? pipeline[0].toUpperCase() : "-")}
+                        </text>
+                    </g>
+                    {/* ID Block */}
+                    <g transform="translate(260, 80)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[1])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[1] ? pipeline[1].toUpperCase() : "-"}</text>
+                    </g>
+                    {/* EX Block */}
+                    <g transform="translate(460, 80)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[2])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[2] ? pipeline[2].toUpperCase() : "-"}</text>
+                    </g>
+                    {/* MEM Block */}
+                    <g transform="translate(660, 80)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[3])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[3] ? pipeline[3].toUpperCase() : "-"}</text>
+                        {/* Highlight Active Memory Access */}
+                        {pipeline[3] === "lw" && (
+                            <circle cx="40" cy="40" r="4" fill="#F59E0B" className="animate-ping" />
+                        )}
+                    </g>
+                    {/* WB Block */}
+                    <g transform="translate(860, 80)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[4])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[4] ? pipeline[4].toUpperCase() : "-"}</text>
+                    </g>
+
+                </svg>
+            </div>
+
+            {/* 控制台与说明 */}
+            <div className="flex gap-6">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm w-1/3 flex flex-col justify-between">
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-3">仿真控制</div>
+                        <div className="text-3xl font-mono font-bold text-slate-700 mb-1">周期 {cycle}</div>
+                        <div className="text-xs text-slate-500 mb-4 h-12 leading-relaxed">
+                            {cycle === 0 && "准备就绪。主要观察第 4 周期，LW指令进入访存阶段时的情况。"}
+                            {cycle === 4 && arch === "unified" && <span className="text-red-600 font-bold">⚠️ 结构冒险！LW 正在使用存储器读数据，AND 指令无法同时使用该存储器取指，被迫停顿。</span>}
+                            {cycle === 4 && arch === "separate" && <span className="text-emerald-600 font-bold">✅ 无冒险。LW 访问数据存储器，AND 访问指令存储器，两者并行不悖。</span>}
+                            {cycle !== 0 && cycle !== 4 && "流水线正常运行中..."}
+                        </div>
+                    </div>
+                    <button onClick={() => { if(cycle>=9) reset(); setIsPlaying(!isPlaying); }} className={`w-full py-3 flex items-center justify-center gap-2 rounded-lg font-bold transition-all shadow-md ${isPlaying ? "bg-amber-100 text-amber-700" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+                        {isPlaying ? <Pause className="w-4 h-4 fill-current"/> : <Play className="w-4 h-4 fill-current"/>}
+                        {isPlaying ? "暂停" : cycle>=9 ? "重置" : "开始演示"}
+                    </button>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-1">
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2">
+                        <Activity className="w-4 h-4"/> 架构解析 (Architecture)
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className={`p-3 rounded border ${arch==="unified" ? "bg-red-50 border-red-100 ring-1 ring-red-200" : "bg-slate-50 border-slate-100 opacity-50"}`}>
+                            <div className="font-bold text-sm mb-1 text-slate-800">冯·诺依曼结构 (Unified)</div>
+                            <div className="text-xs text-slate-600 leading-relaxed">
+                                指令和数据共用一个存储器。当 MEM 阶段需要读写数据，且 IF 阶段需要取指令时，会发生<span className="font-bold text-red-600">资源冲突</span>。必须暂停取指 1 个周期。
+                            </div>
+                        </div>
+                        <div className={`p-3 rounded border ${arch==="separate" ? "bg-emerald-50 border-emerald-100 ring-1 ring-emerald-200" : "bg-slate-50 border-slate-100 opacity-50"}`}>
+                            <div className="font-bold text-sm mb-1 text-slate-800">哈佛结构 (Separate)</div>
+                            <div className="text-xs text-slate-600 leading-relaxed">
+                                拥有独立的指令存储器 (IM) 和数据存储器 (DM)。MEM 段和 IF 段可以<span className="font-bold text-emerald-600">同时访问</span>各自的存储器，完全消除此类结构冒险。现代 Cache 设计通常采用此方案。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
+
 // Ch6. Forwarding Unit Logic Viz
 const ForwardingUnitViz = () => {
     const [rs, setRs] = useState(1);
@@ -3812,6 +4186,441 @@ const ForwardingUnitViz = () => {
         </ToolCard>
     );
 };
+
+// --- 组件开始：Ch6 数据冒险与转发可视化 (ForwardingUnitViz) ---
+const ForwardingUnitViz2 = () => {
+  const [forwarding, setForwarding] = useState(true); // 是否启用转发
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [cycle, setCycle] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // 指令序列: 构造数据依赖链 $1
+  const instructions = [
+    { id: "add", asm: "add $1, $2, $3", type: "write_1", desc: "写 $1" },
+    { id: "sub", asm: "sub $4, $1, $5", type: "read_1_a", desc: "读 $1 (距离1)" },
+    { id: "and", asm: "and $6, $1, $7", type: "read_1_b", desc: "读 $1 (距离2)" },
+    { id: "or",  asm: "or  $8, $1, $9", type: "read_1_c", desc: "读 $1 (距离3)" },
+    { id: "nop", asm: "nop", type: "nop", desc: "" },
+  ];
+
+  // 状态机
+  const [pipeline, setPipeline] = useState<(string | null)[]>([null, null, null, null, null]);
+  const [stallCount, setStallCount] = useState(0); // 当前指令还要停顿多久
+  const [forwardPaths, setForwardPaths] = useState<{from: string, to: string}[]>([]); // 激活的转发路径
+
+  const reset = () => {
+    setIsPlaying(false);
+    setCycle(0);
+    setPipeline([null, null, null, null, null]);
+    setStallCount(0);
+    setForwardPaths([]);
+  };
+
+  const openModal = () => {
+    setIsModalOpen(true);
+    reset();
+  };
+
+  // 核心模拟
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setCycle(c => {
+          if (c >= 10) { setIsPlaying(false); return c; }
+          const nextCycle = c + 1;
+          
+          setPipeline(prev => {
+            const nextPipe = [...prev];
+            let nextStall = stallCount;
+            let activePaths: {from: string, to: string}[] = [];
+
+            // 1. 数据冒险检测 (Hazard Detection)
+            // 假设: SUB 在 ID (即将进 EX), ADD 在 EX (即将进 MEM)
+            // 如果无转发: SUB 必须在 ID 停顿，直到 ADD 完成 WB (Cycle 5)
+            // ADD (C1:IF, C2:ID, C3:EX, C4:MEM, C5:WB) -> $1 ready at end of C5
+            // SUB (C2:IF, C3:ID - need $1) -> Wait C3, C4, C5. Go to EX at C6.
+            
+            // 简化模拟逻辑：
+            // Cycle 3: ADD在EX, SUB在ID.
+            // 无转发: SUB检测到依赖，Stall = 2 cycles.
+            // 有转发: 不Stall.
+            
+            if (!forwarding) {
+                // 停顿逻辑
+                if (nextStall > 0) {
+                    // 继续停顿: 后级流动，前级保持
+                    nextPipe[4] = prev[3];
+                    nextPipe[3] = prev[2];
+                    nextPipe[2] = null; // 插入气泡
+                    nextPipe[1] = prev[1]; // ID 保持
+                    nextPipe[0] = prev[0]; // IF 保持
+                    nextStall--;
+                } else {
+                    // 检查是否需要新的停顿
+                    // 模拟: 当 SUB (read_1) 在 ID，且 ADD (write_1) 在 EX/MEM/WB 时
+                    // 简单化：硬编码针对此序列的停顿
+                    // SUB (index 1) 进入 ID 是 Cycle 3
+                    const idInstr = instructions.find(i => i.id === prev[0]); // 刚进 ID 的
+                    const exInstr = instructions.find(i => i.id === prev[1]); // EX 里的
+                    const memInstr = instructions.find(i => i.id === prev[2]); // MEM 里的
+                    
+                    // 检测 RAW (Read After Write) on $1
+                    // 如果 ID 读 $1，且 (EX 写 $1 或 MEM 写 $1)
+                    let hazard = false;
+                    if (prev[0] === "sub" && (prev[1]==="add" || prev[2]==="add")) hazard = true; // Sub needs Add
+                    if (prev[0] === "and" && (prev[1]==="sub" || prev[2]==="sub" || prev[1]==="add" || prev[2]==="add")) {
+                         // And needs Add (dist 2)
+                         if (prev[1]==="add" || prev[2]==="add") hazard = true;
+                    }
+
+                    if (hazard) {
+                        // 触发停顿
+                        nextPipe[4] = prev[3];
+                        nextPipe[3] = prev[2];
+                        nextPipe[2] = prev[1]; // EX 继续走
+                        nextPipe[1] = null;    // ID 变成气泡 (Bubble) 
+                        // 实际上是 ID 阶段无法发射到 EX，所以 EX 拿到气泡
+                        // 这里简化：EX 拿到气泡，ID 保持不变
+                        
+                        nextPipe[2] = null; // Bubble into EX
+                        nextPipe[1] = prev[1]; // ID Stall
+                        nextPipe[0] = prev[0]; // IF Stall
+                        
+                        // 由于我们是硬编码序列，简单处理:
+                        // SUB 在 Cycle 3 到达 ID。ADD 在 EX。
+                        // SUB 需要等 ADD 到 WB (Cycle 5) 之后。
+                        // 所以 C3(Stall), C4(Stall), C5(Go) -> Total 2 stalls? 
+                        // 其实 MIPS 寄存器前半周期写后半周期读，所以只要 WB 阶段即可。
+                        // ADD 在 WB 是 Cycle 5。SUB 可以在 Cycle 5 的 ID 读到。
+                        // 所以 SUB 在 C3, C4 停顿。C5 读到数据进 EX (C6)。
+                        
+                        // 这里的逻辑有点绕，为了可视化效果，我们直接控制 Bubble
+                        nextStall = 0; // 简化为单步控制
+                    } else {
+                        // 正常流动
+                        nextPipe[4] = prev[3];
+                        nextPipe[3] = prev[2];
+                        nextPipe[2] = prev[1];
+                        nextPipe[1] = prev[0];
+                        // Fetch next
+                        const fetchedCount = cycle; // 简单映射
+                        let fetchId = null;
+                        
+                        // 计算 Fetch 索引 (考虑停顿带来的延迟)
+                        // 这部分逻辑比较复杂，为了演示效果，我们使用预计算的轨迹
+                    }
+                }
+            } 
+            
+            // --- 重写：基于预设轨迹的简单渲染 ---
+            // 为了保证演示的稳定性，我们根据模式 (Forwarding vs Stall) 使用预定义的时空图映射
+            // 这样能保证视觉效果最清晰，避免逻辑 BUG
+            
+            if (forwarding) {
+                // 模式 A: Forwarding (全速)
+                // C1: Add
+                // C2: Sub, Add
+                // C3: And, Sub, Add
+                // C4: Or, And, Sub, Add
+                const p = [null, null, null, null, null];
+                if (nextCycle >= 5) p[4] = instructions[nextCycle-5]?.id || null;
+                if (nextCycle >= 4) p[3] = instructions[nextCycle-4]?.id || null;
+                if (nextCycle >= 3) p[2] = instructions[nextCycle-3]?.id || null;
+                if (nextCycle >= 2) p[1] = instructions[nextCycle-2]?.id || null;
+                if (nextCycle >= 1) p[0] = instructions[nextCycle-1]?.id || null;
+                
+                // 计算转发路径 (Forwarding Logic Visualization)
+                // Cycle 3: Sub(EX), Add(MEM) -> EX Hazard ($1) -> Forward EX/MEM to ALU
+                if (nextCycle === 3) activePaths.push({ from: "EX/MEM", to: "ALU" });
+                
+                // Cycle 4: And(EX), Sub(MEM), Add(WB)
+                // And reads $1. Add is in WB. -> MEM Hazard -> Forward MEM/WB to ALU
+                // Sub reads $1? No sub writes $4.
+                if (nextCycle === 4) activePaths.push({ from: "MEM/WB", to: "ALU" });
+                
+                // Cycle 5: Or(EX), And(MEM), Sub(WB)
+                // Or reads $1. Add has finished. Value in RegFile. No forwarding needed.
+                
+                setForwardPaths(activePaths);
+                return p;
+            } else {
+                // 模式 B: Stall (停顿)
+                // Sub (read $1) depends on Add (write $1)
+                // Add: IF(1) ID(2) EX(3) MEM(4) WB(5) -> $1 ready @ end of 5
+                // Sub: IF(2) ID(3-stall) ID(4-stall) ID(5-read) EX(6) ...
+                
+                const p = [...prev];
+                // Manually mapping the stall sequence
+                const seq = [
+                    ["add", null, null, null, null], // 1
+                    ["sub", "add", null, null, null], // 2
+                    ["and", "sub", "add", null, null], // 3 -> Sub in ID, Add in EX. HAZARD!
+                    ["and", "sub", null, "add", null], // 4 -> Sub Stalls in ID (Bubble in EX)
+                    ["and", "sub", null, null, "add"], // 5 -> Sub Stalls in ID (Bubble in EX, Add WB)
+                    ["or",  "and", "sub", null, null], // 6 -> Hazard cleared! Sub moves to EX
+                    ["nop", "or",  "and", "sub", null], // 7
+                    [null,  "nop", "or",  "and", "sub"], // 8
+                    [null,  null,  "nop", "or",  "and"], // 9
+                    [null,  null,  null,  "nop", "or"],  // 10
+                ];
+                
+                if (nextCycle <= seq.length) {
+                    const s = seq[nextCycle-1];
+                    // Map visual array [IF, ID, EX, MEM, WB]
+                    return [s[0], s[1], s[2], s[3], s[4]]; 
+                }
+                return p;
+            }
+          });
+          
+          return nextCycle;
+        });
+      }, 1500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying, forwarding]);
+
+  const getInstrColor = (id: string | null) => {
+    if (!id) return "bg-slate-50 border-slate-200 text-slate-300";
+    if (id === "add") return "bg-blue-100 border-blue-300 text-blue-700"; // Producer
+    if (id === "sub") return "bg-amber-100 border-amber-300 text-amber-700"; // Consumer 1
+    if (id === "and") return "bg-purple-100 border-purple-300 text-purple-700"; // Consumer 2
+    return "bg-slate-100 border-slate-300 text-slate-600";
+  };
+
+  // --- 1. 简约卡片 ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-blue-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <FastForward className="w-4 h-4 text-blue-600" />
+          数据冒险与转发
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-blue-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {/* 模式显示 */}
+        <div className={`flex items-center justify-between p-3 rounded border transition-colors ${forwarding ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+            <span className="text-xs font-bold text-slate-600">当前模式</span>
+            <span className={`text-xs font-bold flex items-center gap-1 ${forwarding ? "text-emerald-600" : "text-red-600"}`}>
+                {forwarding ? <Zap className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
+                {forwarding ? "转发 (Bypass)" : "停顿 (Stall)"}
+            </span>
+        </div>
+
+        {/* 迷你流水线 */}
+        <div className="flex gap-1">
+            {["IF","ID","EX","MEM","WB"].map((stage, idx) => (
+                <div key={stage} className={`flex-1 h-10 rounded border flex items-center justify-center text-[10px] font-bold transition-all ${getInstrColor(pipeline[idx])}`}>
+                    {pipeline[idx] ? pipeline[idx].toUpperCase() : (forwarding || cycle < 3 ? "-" : "o")}
+                </div>
+            ))}
+        </div>
+
+        <button onClick={openModal} className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs rounded-lg flex items-center justify-center gap-2 transition-all border border-blue-200 font-bold">
+          <Play className="w-3 h-3 fill-current" /> 演示数据流向
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 2. 详细浮窗 ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-100 rounded-lg"><FastForward className="w-6 h-6 text-blue-600"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">数据冒险 (Data Hazards)</h3>
+                    <div className="text-xs text-slate-500 font-medium">演示 转发 (Forwarding) 技术如何解决 RAW 依赖</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+                <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button onClick={() => { setForwarding(false); reset(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${!forwarding ? "bg-white text-red-600 shadow-sm" : "text-slate-500"}`}>
+                        禁用转发 (Stall)
+                    </button>
+                    <button onClick={() => { setForwarding(true); reset(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${forwarding ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500"}`}>
+                        启用转发 (Bypass)
+                    </button>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+            </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 flex flex-col gap-6">
+            
+            {/* Viz Container */}
+            <div className="relative w-full aspect-[2.5/1] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden select-none ring-4 ring-slate-50">
+                <div className="absolute inset-0" style={{backgroundImage: 'linear-gradient(#E2E8F0 1px, transparent 1px), linear-gradient(90deg, #E2E8F0 1px, transparent 1px)', backgroundSize: '20px 20px', opacity: 0.5}}></div>
+
+                <svg viewBox="0 0 1000 400" className="w-full h-full relative z-10">
+                    <defs>
+                        <marker id="arrow-gray" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#94A3B8" />
+                        </marker>
+                        <marker id="arrow-blue" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#2563EB" />
+                        </marker>
+                        <marker id="arrow-red" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#EF4444" />
+                        </marker>
+                        <filter id="glow-bypass">
+                            <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#2563EB" />
+                        </filter>
+                    </defs>
+
+                    {/* 1. 阶段标记 */}
+                    <g fontSize="12" fontWeight="bold" fill="#64748B" textAnchor="middle">
+                        <text x="100" y="40">IF 取指</text>
+                        <text x="300" y="40">ID 译码</text>
+                        <text x="500" y="40">EX 执行</text>
+                        <text x="700" y="40">MEM 访存</text>
+                        <text x="900" y="40">WB 写回</text>
+                        {/* Pipeline Registers (Bars) */}
+                        <rect x="195" y="60" width="10" height="280" fill="#E2E8F0" rx="2"/>
+                        <rect x="395" y="60" width="10" height="280" fill="#E2E8F0" rx="2"/>
+                        <rect x="595" y="60" width="10" height="280" fill={forwardPaths.some(p=>p.from==="EX/MEM") ? "#BFDBFE" : "#E2E8F0"} rx="2"/> {/* EX/MEM Latch */}
+                        <rect x="795" y="60" width="10" height="280" fill={forwardPaths.some(p=>p.from==="MEM/WB") ? "#BFDBFE" : "#E2E8F0"} rx="2"/> {/* MEM/WB Latch */}
+                        
+                        <text x="600" y="350" fontSize="10">EX/MEM</text>
+                        <text x="800" y="350" fontSize="10">MEM/WB</text>
+                    </g>
+
+                    {/* 2. 硬件部件 */}
+                    <g stroke="#94A3B8" strokeWidth="2" fill="white">
+                        {/* Regs */}
+                        <rect x="260" y="150" width="80" height="100" rx="4" />
+                        <text x="300" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12" fontWeight="bold">Regs</text>
+                        
+                        {/* Forwarding Unit */}
+                        <rect x="420" y="300" width="160" height="40" rx="20" fill="#F0F9FF" stroke="#0284C7" />
+                        <text x="500" y="325" textAnchor="middle" fill="#0369A1" stroke="none" fontSize="12" fontWeight="bold">Forwarding Unit</text>
+
+                        {/* ALU with Muxes */}
+                        {/* Mux A */}
+                        <polygon points="430,160 450,170 450,190 430,200" fill={forwardPaths.length>0?"#EFF6FF":"white"} stroke="#94A3B8"/>
+                        {/* Mux B */}
+                        <polygon points="430,210 450,220 450,240 430,250" fill={forwardPaths.length>0?"#EFF6FF":"white"} stroke="#94A3B8"/>
+                        
+                        {/* ALU Body */}
+                        <path d="M460 160 L540 180 L540 230 L460 250 L460 220 L450 205 L460 190 Z" fill={forwardPaths.length>0 ? "#DBEAFE" : "white"} stroke={forwardPaths.length>0 ? "#2563EB" : "#94A3B8"}/>
+                        <text x="510" y="210" textAnchor="middle" fill="#475569" stroke="none" fontSize="12" fontWeight="bold">ALU</text>
+                    </g>
+
+                    {/* 3. 转发路径 (The Rainbow Curves) */}
+                    <g fill="none" strokeWidth="3" strokeLinecap="round">
+                        {/* EX Hazard: EX/MEM -> ALU Input */}
+                        {forwardPaths.some(p => p.from === "EX/MEM") && (
+                            <path d="M600 150 L600 100 L440 100 L440 160" stroke="#F59E0B" markerEnd="url(#arrow-blue)" className="animate-in fade-in duration-500" filter="url(#glow-bypass)"/>
+                        )}
+                        {/* MEM Hazard: MEM/WB -> ALU Input */}
+                        {forwardPaths.some(p => p.from === "MEM/WB") && (
+                            <path d="M800 150 L800 80 L440 80 L440 160" stroke="#8B5CF6" markerEnd="url(#arrow-blue)" className="animate-in fade-in duration-500" strokeDasharray="4,2" filter="url(#glow-bypass)"/>
+                        )}
+                    </g>
+
+                    {/* 4. 流动指令块 */}
+                    <g transform="translate(0, 0)">
+                        {/* IF */}
+                        <g transform="translate(60, 260)">
+                            <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[0])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                            <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[0] || (forwarding ? "-" : "Stall")}</text>
+                        </g>
+                        {/* ID */}
+                        <g transform="translate(260, 260)">
+                            <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[1])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                            <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[1] || (forwarding ? "-" : "Stall")}</text>
+                        </g>
+                        {/* EX */}
+                        <g transform="translate(460, 260)">
+                            <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[2])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                            <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[2] || (forwarding ? "-" : "Bubble")}</text>
+                        </g>
+                        {/* MEM */}
+                        <g transform="translate(660, 260)">
+                            <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[3])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                            <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[3] || "-"}</text>
+                        </g>
+                        {/* WB */}
+                        <g transform="translate(860, 260)">
+                            <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[4])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                            <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{pipeline[4] || "-"}</text>
+                        </g>
+                    </g>
+
+                    {/* 5. 提示标签 */}
+                    {forwardPaths.length > 0 && (
+                        <g className="animate-bounce">
+                            <text x="500" y="130" textAnchor="middle" fontSize="10" fill="#2563EB" fontWeight="bold">⚡ Forwarding!</text>
+                        </g>
+                    )}
+                    {!forwarding && pipeline[2] === null && cycle >= 3 && cycle <= 5 && (
+                        <g className="animate-pulse">
+                            <text x="500" y="280" textAnchor="middle" fontSize="12" fill="#EF4444" fontWeight="bold">🚫 Stall (Bubble)</text>
+                        </g>
+                    )}
+
+                </svg>
+            </div>
+
+            {/* Controls */}
+            <div className="flex gap-6">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm w-1/3 flex flex-col justify-between">
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-3">仿真控制</div>
+                        <div className="text-3xl font-mono font-bold text-blue-600 mb-1">Cycle {cycle}</div>
+                        <div className="text-xs text-slate-500">
+                            {forwarding ? "转发模式: 检测到依赖时，通过旁路直接传送数据。" : "停顿模式: 检测到依赖时，暂停流水线直到数据写回。"}
+                        </div>
+                    </div>
+                    <button onClick={() => { if(cycle>=10) reset(); setIsPlaying(!isPlaying); }} className={`w-full py-3 flex items-center justify-center gap-2 rounded-lg font-bold transition-all shadow-md ${isPlaying ? "bg-amber-100 text-amber-700" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+                        {isPlaying ? <Pause className="w-4 h-4 fill-current"/> : <Play className="w-4 h-4 fill-current"/>}
+                        {isPlaying ? "暂停" : cycle>=10 ? "重置" : "开始演示"}
+                    </button>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-1">
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2">
+                        <Activity className="w-4 h-4"/> 转发逻辑 (Forwarding Logic)
+                    </div>
+                    <div className="flex gap-4 text-xs">
+                        <div className={`flex-1 p-3 rounded border ${forwardPaths.some(p=>p.from==="EX/MEM") ? "bg-amber-50 border-amber-200 ring-1 ring-amber-300" : "bg-slate-50 border-slate-100"}`}>
+                            <div className="font-bold mb-1 text-slate-800">EX 冒险 (距离 1)</div>
+                            <div className="text-slate-600">前一条指令在 EX 阶段产生结果，当前指令在 ID 需要。</div>
+                            <div className="mt-2 font-mono text-[10px] text-amber-700 bg-white/50 p-1 rounded">
+                                if (EX/MEM.Rd == ID/EX.Rs) <br/> Forward A = 10
+                            </div>
+                        </div>
+                        <div className={`flex-1 p-3 rounded border ${forwardPaths.some(p=>p.from==="MEM/WB") ? "bg-purple-50 border-purple-200 ring-1 ring-purple-300" : "bg-slate-50 border-slate-100"}`}>
+                            <div className="font-bold mb-1 text-slate-800">MEM 冒险 (距离 2)</div>
+                            <div className="text-slate-600">前前条指令在 MEM 阶段，当前指令需要数据。</div>
+                            <div className="mt-2 font-mono text-[10px] text-purple-700 bg-white/50 p-1 rounded">
+                                if (MEM/WB.Rd == ID/EX.Rs) <br/> Forward A = 01
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
 
 // --- 组件开始：Ch6 流水线控制冒险可视化 (v11.0 - 全中文版) ---
 const ControlHazardViz = () => {
@@ -6188,7 +6997,9 @@ const App = () => {
                 <div id="tools-chapter-6" className="space-y-6 mt-12 scroll-mt-6">
                     <div className="text-xs font-bold text-slate-300 uppercase pl-1 mb-2 border-b border-slate-200 pb-1">Ch6. 流水线</div>
                     <PipelineSpaceTimeViz />
+                    <StructuralHazardViz />
                     <ForwardingUnitViz />
+                    <ForwardingUnitViz2 />
                     <ControlHazardViz />
                     <BranchPredictionViz />
                     <DelayedBranchingViz />
