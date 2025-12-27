@@ -46,6 +46,7 @@ import {
   Table as TableIcon,
   FileDigit,
   Maximize2, 
+  Pause,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -127,6 +128,15 @@ const USER_DOCUMENT = `# 计算机组织结构期末复习指南 (全集)
   * **十 $\\to$ R**：整数除基取余 (上低下高)，小数乘基取整 (上高下低)。  
 * **整数表示 (原码/补码/移码)?**  
   * **补码 (Two's Complement)**：正数不变；负数**取反加1**。  
+  * **小数** (补码)：小数点固定在符号位后 (如 \`1.xxxx\`)。
+  * **转换规则 (原 $\\to$ 补)**：
+    * **正小数**：符号位 0，数值位不变。
+    * **负小数**：符号位 1，数值位**按位取反，末位加 1**。  
+    * **示例**：$x = -0.1011$  
+        1. 写出原码：$1.1011$  
+        2. 数值取反：$1.0100$ (符号位不变)  
+        3. 末位加一：**$1.0101$** (即为补码)  
+    * **注意**：定点小数补码范围为 $-1 \\le x \\le 1 - 2^{-n}$ (其中 $-1$ 的补码规定为 \`1.000...0\`)。
   * **移码**：补码符号位取反 (用于浮点数阶码，方便比较大小)。  
 * **无符号与带符号整数?**  
   * **范围 (n位)**：  
@@ -1105,348 +1115,418 @@ const EndiannessViz = () => {
   )
 }
 
-// --- 组件开始：Ch2 进制转换可视化 (BaseConverter) - 简约/浮窗版 ---
+// --- 组件开始：Ch2 进制转换 - 真正的过程演示版 ---
 const BaseConverter = () => {
-  const [input, setInput] = useState("10.25");
+  const [input, setInput] = useState("25.125");
   const [fromBase, setFromBase] = useState(10);
   const [toBase, setToBase] = useState(2);
-  const [steps, setSteps] = useState<Array<{ title: string; lines: string[] }>>([]);
-  const [result, setResult] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false); // 控制浮窗显示
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // 动画控制状态
+  const [frames, setFrames] = useState<any[]>([]); // 每一帧的数据
+  const [currentFrameIdx, setCurrentFrameIdx] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 核心转换逻辑 (保持不变，提取出来方便复用)
-  const calculate = () => {
-    setSteps([]);
-    setResult("");
-    
-    if (!input) return;
+  // 最终结果（仅用于非浮窗模式显示）
+  const [simpleResult, setSimpleResult] = useState("");
+
+  // --- 核心：生成演示帧 ---
+  const generateFrames = () => {
     const numStr = input.trim().toUpperCase();
+    if (!numStr) return;
+    // ...简单验证略...
     const parts = numStr.split('.');
-    if (parts.length > 2) return; 
-
-    const digits = "0123456789ABCDEF";
-    const valMap:any = {};
-    for(let i=0; i<digits.length; i++) valMap[digits[i]] = i;
-
-    // 验证
-    for (let char of numStr) {
-      if (char === '.') continue;
-      if (valMap[char] === undefined || valMap[char] >= fromBase) {
-        setResult("非法字符");
-        return;
-      }
-    }
-
-    const newSteps: Array<{ title: string; lines: string[] }> = [];
     
-    // 1. 转十进制
-    let decInt = 0;
-    let decFrac = 0;
+    // 为了演示清晰，我们专注于 10进制 <-> 其他进制
+    // 如果是 其他 <-> 其他，建议用户分两步看，或者这里我们简化为只演示 "转出" 或 "转入"
+    // 这里实现：标准算法演示。
     
+    let _frames: any[] = [];
+    let stepId = 0;
+
+    // 辅助：生成帧
+    const addFrame = (title: string, desc: string, highlightData: any, resultSoFar: string) => {
+      _frames.push({
+        id: stepId++,
+        title,
+        desc,
+        data: highlightData, // 包含当前展示的所有行数据
+        result: resultSoFar
+      });
+    };
+
+    // 场景A: 十进制 -> 其他 (短除法 + 乘积法)
     if (fromBase === 10) {
-      decInt = parseInt(parts[0]);
-      if (parts[1]) decFrac = parseFloat(`0.${parts[1]}`);
-    } else {
-      const intPart = parts[0];
-      const intLines = [];
-      for(let i=0; i<intPart.length; i++) {
-        const digit = valMap[intPart[i]];
-        const power = intPart.length - 1 - i;
-        decInt += digit * Math.pow(fromBase, power);
-        intLines.push(`${intPart[i]}×${fromBase}^${power}=${digit * Math.pow(fromBase, power)}`);
-      }
-      newSteps.push({ title: `${fromBase}进制 -> 10进制 (整数)`, lines: [...intLines, `Sum: ${decInt}`] });
-
-      if (parts[1]) {
-        const fracPart = parts[1];
-        const fracLines = [];
-        for(let i=0; i<fracPart.length; i++) {
-          const digit = valMap[fracPart[i]];
-          const power = -(i + 1);
-          const val = digit * Math.pow(fromBase, power);
-          decFrac += val;
-          fracLines.push(`${fracPart[i]}×${fromBase}^(${power})=${val.toFixed(4)}`);
-        }
-        newSteps.push({ title: `${fromBase}进制 -> 10进制 (小数)`, lines: [...fracLines, `Sum: ${decFrac.toFixed(4)}...`] });
-      }
-    }
-
-    // 2. 转目标进制
-    let finalRes = "";
-    if (toBase === 10) {
-      finalRes = (decInt + decFrac).toString();
-      if(fromBase !== 10) newSteps.push({ title: "结果", lines: [`${decInt + decFrac}`]});
-    } else {
+      let decInt = parseInt(parts[0]) || 0;
+      let decFrac = parts[1] ? parseFloat(`0.${parts[1]}`) : 0;
+      let finalResInt = "";
+      
+      // 1. 整数部分：短除法
       let tempInt = decInt;
-      let intRes = "";
-      const divLines = [];
-      if (tempInt === 0) intRes = "0";
-      while (tempInt > 0) {
-        const q = Math.floor(tempInt / toBase);
-        const r = tempInt % toBase;
-        divLines.push(`${tempInt}÷${toBase}=${q}...${r}`);
-        intRes = digits[r] + intRes;
-        tempInt = q;
-      }
-      newSteps.push({ title: `10进制 -> ${toBase}进制 (整数除基)`, lines: divLines.length ? divLines : ["0 -> 0"] });
+      let intRows: any[] = []; // { dividend, divisor, quotient, remainder, isCurrent }
+      
+      // 初始帧
+      addFrame("整数转换 (除基取余)", `开始计算整数 ${decInt}`, { type: 'div', rows: [] }, "");
 
-      let fracRes = "";
-      if (decFrac > 0 || (fromBase === 10 && parts[1])) {
+      if (tempInt === 0) {
+        intRows.push({ dividend: 0, divisor: toBase, quotient: 0, remainder: 0, active: true });
+        addFrame("整数转换", "0 的结果是 0", { type: 'div', rows: [...intRows] }, "0");
+        finalResInt = "0";
+      } else {
+        while (tempInt > 0) {
+          const q = Math.floor(tempInt / toBase);
+          const r = tempInt % toBase;
+          
+          // 步骤1: 准备除法
+          const newRow = { dividend: tempInt, divisor: toBase, quotient: q, remainder: r, active: 'calc' }; // calc: 高亮计算
+          intRows.push(newRow);
+          addFrame("整数转换", `${tempInt} ÷ ${toBase} = ${q} ...... ${r}`, { type: 'div', rows: JSON.parse(JSON.stringify(intRows)) }, finalResInt);
+          
+          // 步骤2: 提取余数
+          intRows[intRows.length-1].active = 'remain'; // remain: 高亮余数
+          const digit = r.toString(16).toUpperCase();
+          finalResInt = digit + finalResInt; // 逆序拼接
+          addFrame("整数转换", `余数 ${r} (即 ${digit}) 进入结果最高位`, { type: 'div', rows: JSON.parse(JSON.stringify(intRows)) }, finalResInt);
+          
+          // 步骤3: 完成此行
+          intRows[intRows.length-1].active = 'done';
+          tempInt = q;
+        }
+      }
+
+      // 2. 小数部分：乘积法
+      let finalResFrac = "";
+      if (decFrac > 0) {
         let tempFrac = decFrac;
-        const mulLines = [];
-        let limit = 6; 
+        let fracRows: any[] = [];
+        let limit = 6;
+        
+        addFrame("小数转换 (乘基取整)", "开始计算小数部分", { type: 'mul', rows: [] }, finalResInt + ".");
+
         while (tempFrac > 0 && limit > 0) {
+          // 精度处理
           tempFrac = parseFloat(tempFrac.toPrecision(10));
           const val = tempFrac * toBase;
           const integer = Math.floor(val);
           const newFrac = val - integer;
-          mulLines.push(`${tempFrac}×${toBase}=${val} -> 取${integer}`);
-          fracRes += digits[integer];
+          
+          // 步骤1: 乘法
+          fracRows.push({ base: tempFrac, multiplier: toBase, product: val, integer: integer, active: 'calc' });
+          addFrame("小数转换", `${tempFrac} × ${toBase} = ${val}`, { type: 'mul', rows: JSON.parse(JSON.stringify(fracRows)) }, finalResInt + "." + finalResFrac);
+          
+          // 步骤2: 取整
+          fracRows[fracRows.length-1].active = 'take';
+          const digit = integer.toString(16).toUpperCase();
+          finalResFrac += digit; // 顺序拼接
+          addFrame("小数转换", `取整数部分 ${integer} (即 ${digit})`, { type: 'mul', rows: JSON.parse(JSON.stringify(fracRows)) }, finalResInt + "." + finalResFrac);
+          
+          // 步骤3: 完成
+          fracRows[fracRows.length-1].active = 'done';
           tempFrac = newFrac;
           limit--;
         }
-        newSteps.push({ title: `10进制 -> ${toBase}进制 (小数乘基)`, lines: mulLines });
       }
-      finalRes = intRes + (fracRes ? `.${fracRes}` : "");
-    }
+      setSimpleResult(finalResInt + (finalResFrac ? `.${finalResFrac}` : ""));
+    } 
+    // 场景B: 其他 -> 十进制 (位权展开)
+    else {
+      let total = 0;
+      let polyItems: any[] = []; // { digit, base, power, val, active }
+      const valMap:any = {};
+      "0123456789ABCDEF".split('').forEach((c,i) => valMap[c] = i);
 
-    setResult(finalRes);
-    setSteps(newSteps);
+      // 整数
+      const intStr = parts[0];
+      for(let i=0; i<intStr.length; i++) {
+        const char = intStr[i];
+        const digit = valMap[char];
+        const power = intStr.length - 1 - i;
+        const val = digit * Math.pow(fromBase, power);
+        
+        polyItems.push({ char, digit, base: fromBase, power, val, active: 'wait' });
+      }
+      // 小数
+      if (parts[1]) {
+        for(let i=0; i<parts[1].length; i++) {
+           const char = parts[1][i];
+           const digit = valMap[char];
+           const power = -(i + 1);
+           const val = digit * Math.pow(fromBase, power);
+           polyItems.push({ char, digit, base: fromBase, power, val, active: 'wait' });
+        }
+      }
+
+      addFrame("按权展开", "将每一位乘以对应的位权", { type: 'poly', items: JSON.parse(JSON.stringify(polyItems)) }, "0");
+
+      for(let i=0; i<polyItems.length; i++) {
+        // 步骤1: 选中某位
+        polyItems[i].active = 'calc';
+        addFrame("按权展开", `计算: ${polyItems[i].char} × ${fromBase}^${polyItems[i].power}`, { type: 'poly', items: JSON.parse(JSON.stringify(polyItems)) }, total.toString());
+        
+        // 步骤2: 加和
+        polyItems[i].active = 'add';
+        total += polyItems[i].val;
+        addFrame("按权展开", `累加: + ${polyItems[i].val}`, { type: 'poly', items: JSON.parse(JSON.stringify(polyItems)) }, total.toString());
+        
+        // 步骤3: 完成
+        polyItems[i].active = 'done';
+      }
+      addFrame("转换完成", "最终结果", { type: 'poly', items: JSON.parse(JSON.stringify(polyItems)) }, total.toString());
+      setSimpleResult(total.toString());
+    }
+    
+    setFrames(_frames);
+    setCurrentFrameIdx(0); // 重置到第一帧
   };
 
-  // 监听输入变化自动计算结果（简约模式下即时反馈），但步骤留在点击时生成
+  // 监听输入变化
   useEffect(() => {
-    if(input) calculate();
+    generateFrames();
   }, [input, fromBase, toBase]);
 
-  // 打开模态框时重新触发一次计算以确保动画流畅
-  const openDetailModal = () => {
+  // 播放器逻辑 (修复版)
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setCurrentFrameIdx(prev => {
+          // 如果没到最后一步，+1
+          if (prev < frames.length - 1) return prev + 1;
+          // 到了最后一步，停止播放
+          setIsPlaying(false);
+          return prev;
+        });
+      }, 1000); // 1秒一跳
+    }
+    // 清理函数：暂停或组件卸载时清除定时器
+    return () => clearInterval(interval);
+  }, [isPlaying, frames.length]); // 依赖项简化
+
+  // 打开 Modal 时自动播放
+  const openModal = () => {
     setIsModalOpen(true);
-    // 稍微延迟一点重置步骤，让用户看到动画重播
-    setSteps([]);
-    setTimeout(() => calculate(), 100);
+    setCurrentFrameIdx(0);
+    setIsPlaying(true);
   };
 
-  // --- 渲染部分 ---
+  // --- 渲染辅助函数 ---
+  const currentFrame = frames[currentFrameIdx] || { title: "准备中", desc: "...", data: {}, result: "" };
 
-  // 1. 简约卡片 (侧边栏显示)
-  const CompactCard = (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm w-full">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-          <Binary className="w-4 h-4 text-blue-400" />
-          进制转换
-        </h3>
-        <button 
-          onClick={openDetailModal}
-          className="text-slate-400 hover:text-white transition-colors"
-          title="查看详细过程与动画"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-      </div>
+  // 渲染短除法 (Div Mod)
+  const renderDivViz = (rows: any[]) => (
+    <div className="flex flex-col items-center font-mono text-lg">
+       {/* 头部 */}
+       <div className="flex w-full max-w-xs justify-between text-slate-500 text-xs border-b border-slate-700 pb-1 mb-2">
+         <span>除数</span><span>被除数</span><span>余数</span>
+       </div>
+       {rows.map((row, idx) => (
+         <div key={idx} className={`relative flex w-full max-w-xs transition-all duration-300 ${row.active === 'calc' ? 'scale-110 font-bold bg-slate-800 rounded px-2' : ''}`}>
+           {/* 除数列 */}
+           <div className="w-8 text-right text-blue-400 border-r-2 border-slate-600 pr-2 mr-2">{row.divisor}</div>
+           
+           {/* 被除数/商列 */}
+           <div className="w-24 text-center border-b border-slate-600">
+             <span className={row.active === 'calc' ? 'text-white' : 'text-slate-400'}>{row.dividend}</span>
+           </div>
+           
+           {/* 余数列 */}
+           <div className="w-16 text-right ml-4 flex items-center justify-end">
+             {row.remainder !== undefined && (
+               <>
+                 <span className="text-slate-600 text-xs mr-2">......</span>
+                 <span className={`transition-all duration-300 ${row.active === 'remain' ? 'text-emerald-400 text-xl font-bold scale-125' : 'text-emerald-600'}`}>
+                   {row.remainder.toString(16).toUpperCase()}
+                 </span>
+               </>
+             )}
+           </div>
 
-      <div className="space-y-3">
-        {/* Input Group */}
-        <div className="flex flex-col gap-1">
-          <div className="flex gap-1">
-            <select 
-              value={fromBase}
-              onChange={(e) => setFromBase(Number(e.target.value))}
-              className="bg-slate-800 text-slate-300 text-xs rounded px-1 py-1 border border-slate-700 w-16"
-            >
-              <option value={2}>BIN</option>
-              <option value={8}>OCT</option>
-              <option value={10}>DEC</option>
-              <option value={16}>HEX</option>
-            </select>
-            <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="flex-1 bg-slate-800 text-slate-200 text-sm rounded px-2 py-1 border border-slate-700 font-mono"
-            />
+           {/* 箭头指示 */}
+           {row.active === 'remain' && (
+             <div className="absolute right-[-40px] top-1 text-emerald-500 animate-bounce">
+               <ArrowRight className="w-5 h-5" />
+             </div>
+           )}
+         </div>
+       ))}
+       {/* 最后的商 */}
+       {rows.length > 0 && (
+          <div className="flex w-full max-w-xs">
+            <div className="w-8 border-r-2 border-transparent pr-2 mr-2"></div>
+            <div className="w-24 text-center text-slate-500 pt-1">0</div>
           </div>
-        </div>
-
-        <div className="flex justify-center text-slate-600">
-          <ArrowDown className="w-4 h-4" />
-        </div>
-
-        {/* Result Group */}
-        <div className="flex flex-col gap-1">
-           <div className="flex gap-1">
-            <select 
-              value={toBase}
-              onChange={(e) => setToBase(Number(e.target.value))}
-              className="bg-slate-800 text-slate-300 text-xs rounded px-1 py-1 border border-slate-700 w-16"
-            >
-              <option value={2}>BIN</option>
-              <option value={8}>OCT</option>
-              <option value={10}>DEC</option>
-              <option value={16}>HEX</option>
-            </select>
-            <div className="flex-1 bg-slate-950 text-emerald-400 font-bold font-mono text-sm rounded px-2 py-1 border border-slate-800 overflow-x-auto whitespace-nowrap scrollbar-hide">
-              {result || "..."}
-            </div>
-          </div>
-        </div>
-
-        <button 
-          onClick={openDetailModal}
-          className="w-full mt-2 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-xs rounded border border-blue-600/30 transition-colors flex items-center justify-center gap-1"
-        >
-          <Play className="w-3 h-3" />
-          显示详细过程动画
-        </button>
-      </div>
+       )}
     </div>
   );
 
-  // 2. 详细浮窗 (Modal)
-  const DetailModal = isModalOpen && (
-    <div className="!m-0 fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-slate-900 w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl border border-slate-700 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-        
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/50">
-          <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <Calculator className="w-5 h-5 text-blue-500" />
-            进制转换详解
-          </h3>
-          <button 
-            onClick={() => setIsModalOpen(false)}
-            className="p-1 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        {/* Body (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-          
-          {/* Controls inside Modal */}
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 mb-8 bg-slate-800/30 p-4 rounded-xl border border-slate-800">
-             {/* From */}
-             <div className="space-y-2">
-                <label className="text-xs text-slate-400 font-mono ml-1">源数据 (FROM)</label>
-                <div className="flex gap-2">
-                  <select 
-                    value={fromBase}
-                    onChange={(e) => setFromBase(Number(e.target.value))}
-                    className="bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700 outline-none focus:border-blue-500"
-                  >
-                    <option value={2}>2 (BIN)</option>
-                    <option value={8}>8 (OCT)</option>
-                    <option value={10}>10 (DEC)</option>
-                    <option value={16}>16 (HEX)</option>
-                  </select>
-                  <input 
-                    type="text" 
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    className="flex-1 bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700 font-mono outline-none focus:border-blue-500"
-                  />
-                </div>
-             </div>
-
-             {/* Arrow */}
-             <div className="flex items-end justify-center pb-1">
-                <ArrowRight className="w-6 h-6 text-slate-600 hidden md:block" />
-                <ArrowDown className="w-6 h-6 text-slate-600 md:hidden" />
-             </div>
-
-             {/* To */}
-             <div className="space-y-2">
-                <label className="text-xs text-slate-400 font-mono ml-1">目标 (TO)</label>
-                <div className="flex gap-2">
-                  <select 
-                    value={toBase}
-                    onChange={(e) => setToBase(Number(e.target.value))}
-                    className="bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700 outline-none focus:border-blue-500"
-                  >
-                    <option value={2}>2 (BIN)</option>
-                    <option value={8}>8 (OCT)</option>
-                    <option value={10}>10 (DEC)</option>
-                    <option value={16}>16 (HEX)</option>
-                  </select>
-                  <div className="flex-1 bg-slate-950 text-emerald-400 font-bold font-mono text-lg rounded-lg px-3 py-2 border border-slate-800 flex items-center overflow-x-auto">
-                    {result || "?"}
-                  </div>
-                </div>
-             </div>
-          </div>
-
-          {/* Steps Animation */}
-          {steps.length > 0 && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-2">
-                 <div className="h-px bg-slate-800 flex-1"></div>
-                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">计算过程演示</span>
-                 <div className="h-px bg-slate-800 flex-1"></div>
-              </div>
-              
-              <div className="grid gap-6 md:grid-cols-2">
-                {steps.map((step, stepIdx) => (
-                  <div 
-                    key={stepIdx} 
-                    className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-backwards"
-                    style={{ animationDelay: `${stepIdx * 200}ms` }}
-                  >
-                    <div className="text-sm font-bold text-blue-400 mb-4 flex items-center gap-2 border-b border-slate-700/50 pb-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-500 shadow shadow-blue-500/50"></div>
-                      {step.title}
-                    </div>
-                    <div className="font-mono text-xs space-y-2 text-slate-300">
-                      {step.lines.map((line, lineIdx) => {
-                        const isResultLine = line.includes("=") || line.includes("Sum");
-                        const [left, right] = line.split(/[=]|Sum:/);
-                        return (
-                          <div key={lineIdx} className="flex flex-wrap items-center gap-2">
-                            <span className="opacity-70">{left}</span>
-                            {right && (
-                              <>
-                                <span className="text-slate-600">=</span>
-                                <span className={`font-bold ${line.includes("Sum") ? "text-emerald-400" : "text-amber-200"}`}>
-                                  {right}
-                                </span>
-                              </>
-                            )}
-                            {!right && <span>{line}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="flex justify-center mt-8 animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${steps.length * 200 + 100}ms` }}>
-                <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-sm font-bold border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-                  <Check className="w-4 h-4" /> 
-                  计算完成: {result}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-        
-        {/* Footer Hint */}
-        <div className="p-3 bg-slate-950 text-center text-xs text-slate-500 border-t border-slate-800">
-           提示: 浮窗模式下支持更详细的算式展示与步骤拆解
-        </div>
+  // 渲染乘积法 (Mul)
+  const renderMulViz = (rows: any[]) => (
+    <div className="font-mono text-sm w-full max-w-md mx-auto">
+      <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] gap-2 text-slate-500 border-b border-slate-700 pb-1 mb-2">
+         <span>小数</span><span></span><span>基数</span><span></span><span>积</span><span></span><span>取整</span>
       </div>
+      {rows.map((row, idx) => (
+        <div key={idx} className={`grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] gap-2 items-center py-1 transition-all ${row.active === 'calc' || row.active === 'take' ? 'bg-slate-800 rounded' : ''}`}>
+          <div className="text-right text-slate-300">0.{row.base.toString().split('.')[1] || 0}</div>
+          <div className="text-slate-600">×</div>
+          <div className="text-blue-400">{row.multiplier}</div>
+          <div className="text-slate-600">=</div>
+          <div className={row.active === 'calc' ? 'text-white font-bold' : 'text-slate-400'}>{row.product}</div>
+          <div className="text-slate-600">→</div>
+          <div className={`text-center font-bold ${row.active === 'take' ? 'text-emerald-400 scale-125' : 'text-emerald-700'}`}>
+            {Math.floor(row.product).toString(16).toUpperCase()}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // 渲染多项式 (Poly)
+  const renderPolyViz = (items: any[]) => (
+    <div className="flex flex-wrap gap-2 justify-center py-8">
+      {items.map((item, idx) => (
+        <div key={idx} className={`flex flex-col items-center p-2 rounded border transition-all duration-500 ${item.active === 'calc' ? 'bg-blue-900/40 border-blue-500 scale-110 z-10' : item.active === 'add' ? 'bg-emerald-900/40 border-emerald-500' : item.active === 'done' ? 'bg-slate-800 border-slate-700 opacity-50' : 'border-transparent'}`}>
+           <div className="text-2xl font-mono font-bold text-white mb-1">{item.char}</div>
+           <div className="text-xs text-slate-400">× {item.base}<sup className="text-[10px]">{item.power}</sup></div>
+           <div className={`mt-2 text-sm font-mono border-t pt-1 ${item.active === 'calc' ? 'text-blue-300' : 'text-slate-500'}`}>
+             {item.val}
+           </div>
+        </div>
+      ))}
     </div>
   );
 
   return (
     <>
-      {CompactCard}
-      {DetailModal}
+      {/* 1. 简约卡片 (侧边栏用) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm w-full">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+            <Binary className="w-4 h-4 text-blue-400" />
+            进制转换
+          </h3>
+          <button onClick={openModal} className="text-slate-400 hover:text-white" title="全屏演示">
+             <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <div className="flex gap-1">
+             <select value={fromBase} onChange={e=>setFromBase(+e.target.value)} className="bg-slate-800 text-slate-300 text-xs rounded w-16 border border-slate-700">
+               {[2,8,10,16].map(b => <option key={b} value={b}>{b===10?'DEC':b===2?'BIN':b===8?'OCT':'HEX'}</option>)}
+             </select>
+             <input value={input} onChange={e=>setInput(e.target.value)} className="flex-1 bg-slate-800 text-slate-200 text-sm rounded px-2 border border-slate-700 font-mono" />
+          </div>
+          <div className="flex justify-center"><ArrowDown className="w-4 h-4 text-slate-600" /></div>
+          <div className="flex gap-1">
+             <select value={toBase} onChange={e=>setToBase(+e.target.value)} className="bg-slate-800 text-slate-300 text-xs rounded w-16 border border-slate-700">
+               {[2,8,10,16].map(b => <option key={b} value={b}>{b===10?'DEC':b===2?'BIN':b===8?'OCT':'HEX'}</option>)}
+             </select>
+             <div className="flex-1 bg-slate-950 text-emerald-400 font-bold font-mono text-sm rounded px-2 py-1 border border-slate-800 overflow-x-auto">
+               {simpleResult || "..."}
+             </div>
+          </div>
+          <button onClick={openModal} className="w-full mt-2 py-1.5 bg-blue-600/10 text-blue-400 text-xs rounded border border-blue-600/30 flex items-center justify-center gap-1">
+            <Play className="w-3 h-3" /> 过程演示
+          </button>
+        </div>
+      </div>
+
+      {/* 2. 全屏浮窗 (真正的过程演示) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-700 flex flex-col overflow-hidden animate-in zoom-in-95">
+            
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-950">
+               <div className="flex items-center gap-3">
+                 <div className="p-2 bg-blue-600/20 rounded-lg"><Calculator className="w-5 h-5 text-blue-500"/></div>
+                 <div>
+                   <h3 className="text-lg font-bold text-slate-100">过程演示: {fromBase}进制 <ArrowRight className="inline w-3 h-3 mx-1"/> {toBase}进制</h3>
+                   <div className="text-xs text-slate-500">算法: {fromBase===10 ? '短除法 / 乘积法' : '按权展开相加'}</div>
+                 </div>
+               </div>
+               <button onClick={()=>setIsModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+
+            {/* Main Stage */}
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-900/50 flex flex-col items-center">
+               
+               {/* 结果栏 */}
+               <div className="w-full max-w-2xl bg-slate-950 border border-slate-800 rounded-xl p-4 mb-8 flex items-center justify-between shadow-inner">
+                  <div className="text-slate-500 text-sm font-mono">当前结果收集</div>
+                  <div className="text-2xl font-mono font-bold text-emerald-400 tracking-wider">
+                    {currentFrame.result || <span className="text-slate-700">等待计算...</span>}
+                    <span className="animate-pulse text-emerald-600">_</span>
+                  </div>
+               </div>
+
+               {/* 动画舞台 */}
+               <div className="w-full max-w-2xl bg-slate-800/30 border border-slate-700/50 rounded-2xl p-8 min-h-[300px] flex flex-col items-center justify-center relative">
+                  {/* 当前步骤说明 */}
+                  <div className="absolute top-4 left-4 bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-xs font-bold border border-blue-500/20">
+                    Step {currentFrameIdx + 1}/{frames.length}: {currentFrame.title}
+                  </div>
+                  <div className="absolute top-4 right-4 text-slate-400 text-sm font-medium">
+                    {currentFrame.desc}
+                  </div>
+
+                  {/* 渲染具体的数学过程 */}
+                  <div className="w-full mt-8">
+                    {currentFrame.data.type === 'div' && renderDivViz(currentFrame.data.rows)}
+                    {currentFrame.data.type === 'mul' && renderMulViz(currentFrame.data.rows)}
+                    {currentFrame.data.type === 'poly' && renderPolyViz(currentFrame.data.items)}
+                  </div>
+               </div>
+            </div>
+
+            {/* Controller Bar */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+               {/* 进度条 */}
+               <div className="w-full md:w-1/3 flex items-center gap-3">
+                 <span className="text-xs text-slate-500 font-mono w-12">{Math.round((currentFrameIdx+1)/frames.length*100)}%</span>
+                 <div className="h-1.5 flex-1 bg-slate-800 rounded-full overflow-hidden">
+                   <div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${(currentFrameIdx+1)/frames.length*100}%`}}></div>
+                 </div>
+               </div>
+
+               {/* 播放控制 */}
+               <div className="flex items-center gap-2">
+                 <button onClick={()=>{setIsPlaying(false); setCurrentFrameIdx(0)}} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400" title="重置"><RotateCcw className="w-5 h-5"/></button>
+                 <button onClick={()=>{setIsPlaying(false); setCurrentFrameIdx(p=>Math.max(0, p-1))}} className="p-2 hover:bg-slate-800 rounded-lg text-slate-300"><ArrowLeft className="w-5 h-5"/></button>
+
+                 <button 
+                   onClick={() => setIsPlaying(!isPlaying)} 
+                   className={`w-12 h-12 flex items-center justify-center rounded-full shadow-lg transition-all active:scale-95 ${
+                     isPlaying 
+                       ? 'bg-amber-500 hover:bg-amber-400 text-slate-900' // 暂停状态颜色
+                       : 'bg-blue-600 hover:bg-blue-500 text-white'       // 播放状态颜色
+                   }`}
+                   title={isPlaying ? "暂停" : "播放"}
+                 >
+                    {isPlaying ? (
+                      // 修复：使用标准的 Pause 图标，位置居中
+                      <Pause className="w-5 h-5 fill-current" />
+                    ) : (
+                      // 播放图标稍微向右偏一点点，视觉上更平衡
+                      <Play className="w-5 h-5 fill-current ml-1" />
+                    )}
+                 </button>
+                 
+                 <button onClick={()=>{setIsPlaying(false); setCurrentFrameIdx(p=>Math.min(frames.length-1, p+1))}} className="p-2 hover:bg-slate-800 rounded-lg text-slate-300"><ArrowRight className="w-5 h-5"/></button>
+                 <button onClick={()=>{setIsPlaying(false); setCurrentFrameIdx(frames.length-1)}} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400" title="跳过"><FastForward className="w-5 h-5"/></button>
+               </div>
+               
+               <div className="w-full md:w-1/3 text-right text-xs text-slate-600 hidden md:block">
+                 点击中间播放键开始自动演示
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
-// --- 组件结束 ---
 
 // Ch2. IEEE 754
 const Ieee754Calc = () => {
