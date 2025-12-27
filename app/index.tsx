@@ -2959,6 +2959,8 @@ const App = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [docWidth, setDocWidth] = useState(896);
     const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'notes' | 'pdf'>('notes');
+    const [currentPdf, setCurrentPdf] = useState<string | null>(null);
   // Ref for the right sidebar to enable programmatic scrolling
   const rightSidebarRef = useRef<HTMLDivElement>(null);
   
@@ -3000,11 +3002,18 @@ const App = () => {
   }, [notes, isEditing]); // Re-run if content changes
 
   const scrollToChapter = (id: string) => {
+      setViewMode('notes');
       const el = document.getElementById(id);
       if (el) {
           el.scrollIntoView({ behavior: 'smooth' });
           setActiveChapterId(id);
       }
+  };
+
+  const openPdf = (pdfName: string) => {
+      setCurrentPdf(pdfName);
+      setViewMode('pdf');
+      setActiveChapterId(pdfName);
   };
 
   return (
@@ -3074,12 +3083,13 @@ const App = () => {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+            <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">复习笔记</div>
             {CHAPTERS.map((chapter) => (
               <button
                 key={chapter.id}
                 onClick={() => scrollToChapter(chapter.id)}
                 className={`w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 border-l-2 ${
-                  activeChapterId === chapter.id 
+                  viewMode === 'notes' && activeChapterId === chapter.id 
                   ? 'bg-white border-indigo-600 text-indigo-700 shadow-sm font-medium' 
                   : 'border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
                 }`}
@@ -3087,16 +3097,46 @@ const App = () => {
                 <div className="truncate">{chapter.title}</div>
               </button>
             ))}
+
+            <div className="px-3 py-2 mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">PDF 讲义</div>
+            {[
+                { id: '1-4-pdf', title: '1-4章习题课', file: '1-4章习题课.pdf' },
+                { id: '5-8-pdf', title: '5-8章习题课', file: '5-8章习题课.pdf' },
+                { id: 'total-pdf', title: '总复习讲义', file: '总复习.pdf' }
+            ].map((pdf) => (
+                <button
+                    key={pdf.id}
+                    onClick={() => openPdf(pdf.file)}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 border-l-2 ${
+                        viewMode === 'pdf' && currentPdf === pdf.file
+                        ? 'bg-white border-indigo-600 text-indigo-700 shadow-sm font-medium' 
+                        : 'border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
+                    }`}
+                >
+                    <div className="flex items-center gap-2 truncate">
+                        <FileDigit className="w-3.5 h-3.5 opacity-70" />
+                        {pdf.title}
+                    </div>
+                </button>
+            ))}
           </div>
         </aside>
 
         {/* Main Document Area */}
         <main className="flex-1 overflow-y-auto bg-slate-50/50 scrollbar-thin scroll-smooth relative">
            <div 
-             style={{ maxWidth: `${docWidth}px` }}
-             className="mx-auto p-8 min-h-full bg-white shadow-sm border-x border-slate-100/50 transition-[max-width] duration-300 ease-in-out"
+             style={{ maxWidth: viewMode === 'pdf' ? '100%' : `${docWidth}px` }}
+             className={`mx-auto min-h-full bg-white shadow-sm transition-[max-width] duration-300 ease-in-out ${viewMode === 'pdf' ? '' : 'p-8 border-x border-slate-100/50'}`}
            >
-             {isEditing ? (
+             {viewMode === 'pdf' ? (
+                <div className="h-[calc(100vh-3.5rem)] w-full bg-slate-800">
+                    <iframe 
+                        src={`./${currentPdf}`} 
+                        className="w-full h-full border-none"
+                        title="PDF Viewer"
+                    />
+                </div>
+             ) : isEditing ? (
                 <textarea
                   className="w-full h-full min-h-[80vh] resize-none outline-none font-mono text-sm text-slate-700 leading-relaxed"
                   value={notes}
@@ -3126,7 +3166,7 @@ const App = () => {
                   </ReactMarkdown>
                 </article>
              )}
-             <div className="h-32"></div>
+             {viewMode !== 'pdf' && <div className="h-32"></div>}
            </div>
         </main>
 
