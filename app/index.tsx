@@ -196,9 +196,45 @@ const USER_DOCUMENT = `# 计算机组织结构期末复习指南 (全集)
   * **溢出判断**：  
     * **方法1**：最高位进位 $\\ne$ 次高位进位 ($C\\_n \\oplus C\\_{n-1} = 1$)。  
     * **方法2**：双符号位 (01正溢出，10负溢出)。  
-* **浮点数加减运算?**  
-  * **步骤**：**对阶** (小阶看齐大阶) $\\to$ **尾数加减** $\\to$ **规格化** (左规/右规) $\\to$ **舍入** $\\to$ **溢出判断**。  
-  * **精度损失**：主要发生在对阶(右移)和舍入时。
+* **浮点数加减运算 (五步法详解)** (★必考计算大题)
+
+    * **总体流程**：**对阶** $\\to$ **尾数加减** $\\to$ **规格化** $\\to$ **舍入** $\\to$ **溢出判断**。
+
+    * **1. 对阶 (Alignment)**
+    * **原则**：**小阶向大阶看齐** ($E_{小} \\to E_{大}$)。
+    * **原因**：若大阶向小阶看齐，尾数需左移，可能导致最高有效位 (MSB) 丢失，误差巨大。小阶变大阶时尾数右移，丢失的是最低位，误差可控。
+    * **操作**：
+        1.  求阶差 $\\Delta E = E_x - E_y$。
+        2.  阶码小的那个数，**阶码 $+ \\Delta E$**，**尾数右移 $\\Delta E$ 位**。
+        3.  *注意*：对阶可能导致有效位丢失（精度损失）。
+
+    * **2. 尾数加减 (Significand Addition/Subtraction)**
+    * **操作**：对齐后的尾数进行定点加减运算。
+    * **注意**：
+        * 需包含**隐藏位 (1.M)** 参与运算。
+        * 通常采用双符号位（变形补码）进行运算，以方便判断尾数是否溢出。
+
+    * **3. 规格化 (Normalization)**
+    运算结果必须调整为 $1.M$ (IEEE 754) 或 $00.1xxxx$ (补码) 的形式。
+    * **右规 (Right Normalize)**：
+        * **触发条件**：尾数运算结果**溢出** (如双符号位为 \`01\` 或 \`10\`，即结果 $>1$ 或 $<-1$)。
+        * **操作**：尾数**右移 1 位**，**阶码 + 1**。
+        * *注*：右规最多只需 1 次。
+    * **左规 (Left Normalize)**：
+        * **触发条件**：尾数结果**非规格化** (如 \`0.001xx...\`)。
+        * **操作**：尾数**左移 n 位**，直到最高位为 1，**阶码 - n**。
+        * *注*：左规可能需要多次。
+
+    * **4. 舍入 (Rounding)**
+    对阶或右规时，尾数低位被移出，需进行舍入处理以保证精度。
+    * **0舍1入法**：类似四舍五入。若移出的最高位为 1，则末位 +1；否则直接舍去。
+    * **恒置1法**：无论移出的是什么，末位恒置 1 (误差较大)。
+    * **截断法**：直接丢弃移出的位 (误差最大)。
+
+    * **5. 溢出判断 (Overflow Check)**
+    * **注意**：尾数加减时的“溢出”已通过“右规”解决，**真正的溢出看阶码**。
+    * **阶码上溢 (Overflow)**：右规导致阶码 $E > E_{max}$ (全 1)。$\\to$ **抛出异常** (结果为 $\\infty$)。
+    * **阶码下溢 (Underflow)**：左规导致阶码 $E < E_{min}$ (全 0)。$\\to$ **按机器零处理** (结果置 0)。
 
 ### 2. 典型例题
 
@@ -2552,6 +2588,355 @@ const StackFrameViz = () => {
     );
 };
 
+// --- 组件开始：Ch4 过程调用可视化 (ProcedureCallViz) - 浅色版 ---
+const ProcedureCallViz = () => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [explanation, setExplanation] = useState("准备开始...");
+
+  // 模拟寄存器状态
+  const [regs, setRegs] = useState({
+    pc: 0x00400000,
+    sp: 0x7FFFFFF0,
+    ra: 0x00000000,
+    a0: 0,
+    v0: 0,
+    s0: 0,
+  });
+
+  // 模拟栈内存
+  const [stack, setStack] = useState<Array<{addr: number, val: number | string, label: string, active: boolean}>>([
+    { addr: 0x7FFFFFF0, val: 0, label: "Caller Stack...", active: false },
+    { addr: 0x7FFFFFEC, val: 0, label: "Empty", active: false },
+    { addr: 0x7FFFFFE8, val: 0, label: "Empty", active: false },
+    { addr: 0x7FFFFFE4, val: 0, label: "Empty", active: false },
+  ]);
+
+  // 指令序列
+  const instructions = [
+    { addr: 0x00400000, asm: "li   $a0, 5",      desc: "加载参数 n=5 到 $a0" },
+    { addr: 0x00400004, asm: "jal  sum",          desc: "跳转到 sum，并将返回地址(PC+4)存入 $ra" },
+    { addr: 0x00400008, asm: "move $t0, $v0",     desc: "调用返回！将结果 $v0 存入 $t0" }, // Return point
+    { addr: 0x0040000C, asm: "DONE",              desc: "程序结束" },
+    // --- sum 函数 ---
+    { addr: 0x00400020, asm: "sum: addi $sp, $sp, -8", desc: "开辟栈帧：$sp 下移 8 字节" },
+    { addr: 0x00400024, asm: "sw   $ra, 4($sp)",  desc: "保存 $ra 到栈" },
+    { addr: 0x00400028, asm: "sw   $s0, 0($sp)",  desc: "保存 $s0 到栈 (保护现场)" },
+    { addr: 0x0040002C, asm: "add  $s0, $a0, $a0",desc: "执行计算：$s0 = 5 + 5 = 10" },
+    { addr: 0x00400030, asm: "move $v0, $s0",     desc: "设置返回值 $v0 = 10" },
+    { addr: 0x00400034, asm: "lw   $s0, 0($sp)",  desc: "恢复 $s0 (恢复现场)" },
+    { addr: 0x00400038, asm: "lw   $ra, 4($sp)",  desc: "恢复 $ra (找回返回地址)" },
+    { addr: 0x0040003C, asm: "addi $sp, $sp, 8",  desc: "销毁栈帧：$sp 上移 8 字节" },
+    { addr: 0x00400040, asm: "jr   $ra",          desc: "跳转回 $ra 指向的地址" },
+  ];
+
+  // 步骤映射逻辑
+  const executeStep = (step: number) => {
+    if (step === 0) {
+      setRegs({ pc: 0x00400000, sp: 0x7FFFFFF0, ra: 0, a0: 0, v0: 0, s0: 0 });
+      setStack(prev => prev.map(s => ({ ...s, val: 0, label: s.addr === 0x7FFFFFF0 ? "Caller Stack..." : "Empty", active: false })));
+      setExplanation("程序就绪。准备调用 sum(5)。");
+      return;
+    }
+    const prevRegs = { ...regs };
+    switch (step) {
+      case 1: // li $a0, 5
+        setRegs(r => ({ ...r, pc: 0x00400004, a0: 5 }));
+        setExplanation("Main: 参数寄存器 $a0 被设置为 5。");
+        break;
+      case 2: // jal sum
+        setRegs(r => ({ ...r, pc: 0x00400020, ra: 0x00400008 })); 
+        setExplanation("Main: 执行 JAL。1. 保存 PC+4 (0x00400008) 到 $ra。 2. PC 跳至 sum (0x00400020)。");
+        break;
+      case 3: // addi $sp, -8
+        setRegs(r => ({ ...r, pc: 0x00400024, sp: 0x7FFFFFE8 }));
+        setExplanation("Sum: 分配栈空间。$sp 指针向下移动 8 字节 (2个字)。");
+        break;
+      case 4: // sw $ra, 4($sp)
+        setRegs(r => ({ ...r, pc: 0x00400028 }));
+        setStack(s => s.map(item => item.addr === 0x7FFFFFEC ? { ...item, val: "0x00400008", label: "Saved $ra", active: true } : { ...item, active: false }));
+        setExplanation("Sum: 将返回地址 $ra 入栈保存。防止调用其他子程序时丢失回家的路。");
+        break;
+      case 5: // sw $s0, 0($sp)
+        setRegs(r => ({ ...r, pc: 0x0040002C }));
+        setStack(s => s.map(item => item.addr === 0x7FFFFFE8 ? { ...item, val: "Old $s0", label: "Saved $s0", active: true } : { ...item, active: false }));
+        setExplanation("Sum: 将保留寄存器 $s0 入栈保存。保护现场。");
+        break;
+      case 6: // add $s0, $a0, $a0
+        setRegs(r => ({ ...r, pc: 0x00400030, s0: 10 }));
+        setStack(s => s.map(i => ({...i, active: false})));
+        setExplanation("Sum: 执行核心逻辑。$s0 = 5 + 5 = 10。");
+        break;
+      case 7: // move $v0, $s0
+        setRegs(r => ({ ...r, pc: 0x00400034, v0: 10 }));
+        setExplanation("Sum: 将结果 10 放入返回值寄存器 $v0。");
+        break;
+      case 8: // lw $s0, 0($sp)
+        setRegs(r => ({ ...r, pc: 0x00400038, s0: 0 })); 
+        setStack(s => s.map(item => item.addr === 0x7FFFFFE8 ? { ...item, active: true } : { ...item, active: false }));
+        setExplanation("Sum: 从栈中恢复 $s0 的旧值。");
+        break;
+      case 9: // lw $ra, 4($sp)
+        setRegs(r => ({ ...r, pc: 0x0040003C, ra: 0x00400008 }));
+        setStack(s => s.map(item => item.addr === 0x7FFFFFEC ? { ...item, active: true } : { ...item, active: false }));
+        setExplanation("Sum: 从栈中恢复返回地址 $ra。");
+        break;
+      case 10: // addi $sp, 8
+        setRegs(r => ({ ...r, pc: 0x00400040, sp: 0x7FFFFFF0 }));
+        setStack(s => s.map(i => ({...i, active: false}))); 
+        setExplanation("Sum: 回收栈空间。$sp 指针向上移动 8 字节。栈帧销毁。");
+        break;
+      case 11: // jr $ra
+        setRegs(r => ({ ...r, pc: 0x00400008 }));
+        setExplanation("Sum: JR 指令。PC 跳转到寄存器 $ra 的值 (0x00400008)。回到 Main。");
+        break;
+      case 12: // move $t0, $v0
+        setRegs(r => ({ ...r, pc: 0x0040000C }));
+        setExplanation("Main: 成功返回！将 $v0 (10) 保存起来。过程调用结束。");
+        break;
+    }
+  };
+
+  useEffect(() => {
+    executeStep(currentStep);
+  }, [currentStep]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isPlaying && isModalOpen) {
+      interval = setInterval(() => {
+        setCurrentStep(prev => {
+          if (prev < 12) return prev + 1;
+          setIsPlaying(false);
+          return prev;
+        });
+      }, 1500);
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying, isModalOpen]);
+
+
+  // 1. 简约卡片 (浅色版)
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <GitBranch className="w-4 h-4 text-amber-500" />
+          过程调用 (JAL/JR)
+        </h3>
+        <button 
+          onClick={() => { setIsModalOpen(true); setCurrentStep(0); }}
+          className="text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="flex gap-2 text-xs font-mono text-slate-500 mb-2">
+        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200">
+            <div className="text-slate-400 text-[10px] uppercase font-bold">PC</div>
+            <div className="text-amber-600 font-bold">0x{regs.pc.toString(16).toUpperCase()}</div>
+        </div>
+        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200">
+            <div className="text-slate-400 text-[10px] uppercase font-bold">$RA</div>
+            <div className="text-blue-600 font-bold">0x{regs.ra.toString(16).toUpperCase()}</div>
+        </div>
+        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200">
+            <div className="text-slate-400 text-[10px] uppercase font-bold">$SP</div>
+            <div className="text-emerald-600 font-bold">...{regs.sp.toString(16).slice(-2)}</div>
+        </div>
+      </div>
+      <button 
+        onClick={() => { setIsModalOpen(true); setCurrentStep(0); setIsPlaying(true); }}
+        className="w-full py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs rounded border border-amber-200 flex items-center justify-center gap-1 transition-colors font-medium"
+      >
+        <Play className="w-3 h-3 fill-current" />
+        演示调用栈动画
+      </button>
+    </div>
+  );
+
+  // 2. 详细浮窗 (浅色版)
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-slate-900/5">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+           <div className="flex items-center gap-3">
+             <div className="p-2 bg-amber-100 rounded-lg"><GitBranch className="w-5 h-5 text-amber-600"/></div>
+             <div>
+               <h3 className="text-lg font-bold text-slate-800">过程调用机制 (Procedure Call)</h3>
+               <div className="text-xs text-slate-500">模拟 JAL(调用), JR(返回) 及 栈帧(Stack Frame) 管理</div>
+             </div>
+           </div>
+           <button onClick={()=>setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"><X className="w-5 h-5"/></button>
+        </div>
+
+        {/* Content Grid */}
+        <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+            
+            {/* Col 1: Code & Explain */}
+            <div className="flex flex-col h-full bg-slate-50/50">
+                <div className="p-3 bg-slate-100/50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">MIPS Assembly</div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-xs bg-white">
+                    {instructions.map((inst, idx) => {
+                        const isCurrent = inst.addr === regs.pc;
+                        return (
+                            <div 
+                                key={inst.addr} 
+                                className={`flex gap-3 p-2 rounded transition-all duration-300 border ${isCurrent ? 'bg-amber-50 border-amber-200 text-amber-900 shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                <div className={`select-none w-16 text-right ${isCurrent ? 'text-amber-700/60' : 'text-slate-300'}`}>{inst.addr.toString(16).toUpperCase().slice(-4)}</div>
+                                <div className={`font-bold ${inst.asm.includes(":") ? "text-blue-600" : ""}`}>{inst.asm}</div>
+                            </div>
+                        )
+                    })}
+                </div>
+                <div className="p-4 bg-slate-50 border-t border-slate-200 min-h-[100px]">
+                    <div className="flex items-center gap-2 mb-2 text-amber-600 font-bold text-sm">
+                        <Activity className="w-4 h-4" /> 当前操作
+                    </div>
+                    <div className="text-sm text-slate-600 leading-relaxed font-medium">
+                        {explanation}
+                    </div>
+                </div>
+            </div>
+
+            {/* Col 2: Registers */}
+            <div className="flex flex-col h-full bg-white">
+                 <div className="p-3 bg-slate-100/50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">CPU Registers</div>
+                 <div className="p-6 grid grid-cols-1 gap-4 overflow-y-auto">
+                     {/* PC & RA */}
+                     <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                         <div className="text-xs text-slate-400 font-bold mb-3 flex justify-between uppercase tracking-wider">
+                            <span>Control Flow</span>
+                         </div>
+                         <div className="space-y-3">
+                             <div className="flex justify-between items-center">
+                                 <span className="font-mono text-slate-500 font-bold w-8">$PC</span>
+                                 <span className="font-mono text-amber-600 font-bold text-lg transition-all duration-300 bg-amber-50 px-2 rounded border border-amber-100">
+                                    {regs.pc.toString(16).toUpperCase()}
+                                 </span>
+                             </div>
+                             <div className="flex justify-between items-center">
+                                 <span className="font-mono text-slate-500 font-bold w-8">$RA</span>
+                                 <span className={`font-mono text-lg font-bold transition-all duration-300 px-2 rounded border ${regs.ra !== 0 ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                    {regs.ra.toString(16).toUpperCase()}
+                                 </span>
+                             </div>
+                         </div>
+                     </div>
+
+                     {/* Arguments & Returns */}
+                     <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                         <div className="text-xs text-slate-400 font-bold mb-3 uppercase tracking-wider">Data</div>
+                         <div className="space-y-3">
+                             <div className="flex justify-between items-center">
+                                 <span className="font-mono text-slate-500 font-bold w-8">$a0</span>
+                                 <span className="font-mono text-slate-700 font-medium">{regs.a0}</span>
+                             </div>
+                             <div className="flex justify-between items-center">
+                                 <span className="font-mono text-slate-500 font-bold w-8">$v0</span>
+                                 <span className={`font-mono font-bold ${regs.v0 !== 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{regs.v0}</span>
+                             </div>
+                             <div className="flex justify-between items-center">
+                                 <span className="font-mono text-slate-500 font-bold w-8">$s0</span>
+                                 <span className="font-mono text-slate-700 font-medium">{regs.s0}</span>
+                             </div>
+                         </div>
+                     </div>
+                     
+                     <div className="text-xs text-slate-500 mt-2 leading-relaxed p-3 bg-slate-50 rounded border border-slate-100">
+                        <span className="font-bold text-amber-600">JAL</span> (Jump And Link): 跳转同时将 PC+4 存入 $ra。<br/>
+                        <span className="font-bold text-amber-600">JR</span> (Jump Register): 只能跳到寄存器指定地址，通常是 $ra。
+                     </div>
+                 </div>
+            </div>
+
+            {/* Col 3: Stack Memory */}
+            <div className="flex flex-col h-full bg-slate-50 relative">
+                <div className="p-3 bg-slate-100/50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider flex justify-between">
+                    <span>Stack Memory</span>
+                    <span>High Addr</span>
+                </div>
+                
+                <div className="flex-1 p-6 relative flex flex-col items-center overflow-y-auto">
+                    {/* Stack Visualization */}
+                    <div className="w-48 space-y-1 relative">
+                        {stack.map((slot) => (
+                            <div key={slot.addr} className="flex items-center group relative">
+                                {/* Address Label (Left) */}
+                                <div className="absolute right-full mr-3 text-[10px] font-mono text-slate-400 top-3">
+                                    {slot.addr.toString(16).toUpperCase().slice(-4)}
+                                </div>
+                                
+                                {/* Memory Slot */}
+                                <div className={`w-full h-12 border-2 rounded flex items-center justify-center font-mono text-sm relative transition-all duration-500 shadow-sm
+                                    ${slot.addr >= regs.sp 
+                                        ? 'bg-white border-slate-300 text-slate-800' // Used/Active range
+                                        : 'bg-slate-100 border-slate-200 border-dashed text-slate-400' // Unused range
+                                    }
+                                    ${slot.active ? 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-md ring-2 ring-emerald-100' : ''}
+                                `}>
+                                    {slot.addr >= regs.sp ? (
+                                        <div className="flex flex-col items-center">
+                                            <span className="font-bold">{slot.val}</span>
+                                            {slot.label && <span className="text-[9px] text-slate-400 uppercase font-bold tracking-tight">{slot.label}</span>}
+                                        </div>
+                                    ) : (
+                                        <span className="text-[10px]">Unused</span>
+                                    )}
+                                </div>
+
+                                {/* SP Pointer (Right Animation) */}
+                                {regs.sp === slot.addr && (
+                                    <div className="absolute left-full ml-3 flex items-center transition-all duration-500 animate-in slide-in-from-left-2">
+                                        <ArrowLeft className="w-5 h-5 text-emerald-500 mr-1" />
+                                        <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded border border-emerald-200 shadow-sm">$SP</span>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="mt-8 text-center opacity-50">
+                         <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Low Addr</div>
+                         <ArrowDown className="w-4 h-4 text-slate-400 mx-auto" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {/* Footer Controls */}
+        <div className="p-4 bg-white border-t border-slate-200 flex justify-center gap-4 shadow-[0_-5px_15px_rgba(0,0,0,0.02)]">
+             <button onClick={()=>{setIsPlaying(false); executeStep(0); setCurrentStep(0)}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors" title="重置"><RotateCcw className="w-5 h-5"/></button>
+             <button onClick={()=>{setIsPlaying(false); setCurrentStep(p=>Math.max(0, p-1))}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"><ArrowLeft className="w-5 h-5"/></button>
+             
+             <button onClick={()=>setIsPlaying(!isPlaying)} className={`w-12 h-12 flex items-center justify-center rounded-full shadow-lg transition-all active:scale-95 active:shadow-sm ${isPlaying ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                {isPlaying ? <Pause className="w-5 h-5 fill-current"/> : <Play className="w-5 h-5 fill-current ml-1"/>}
+             </button>
+             
+             <button onClick={()=>{setIsPlaying(false); setCurrentStep(p=>Math.min(12, p+1))}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"><ArrowRight className="w-5 h-5"/></button>
+             
+             {/* Step Indicator */}
+             <div className="absolute right-6 top-1/2 -translate-y-1/2 hidden md:block text-xs font-mono text-slate-400 font-bold">
+                Step: {currentStep} / 12
+             </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
+
 // Ch5. Datapath Flow Visualizer
 const DatapathViz = () => {
     const [instr, setInstr] = useState('R-type'); // R-type, lw, sw, beq
@@ -4144,6 +4529,7 @@ const App = () => {
                     <MipsVisualizer />
                     <AddressingModeViz />
                     <StackFrameViz />
+                    <ProcedureCallViz />
                 </div>
 
                 <div id="tools-chapter-5" className="space-y-6 mt-12 scroll-mt-6">
