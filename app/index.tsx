@@ -44,7 +44,8 @@ import {
   Check,
   RefreshCw,
   Table as TableIcon,
-  FileDigit
+  FileDigit,
+  Maximize2, 
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1104,58 +1105,348 @@ const EndiannessViz = () => {
   )
 }
 
-// Ch2. Base Converter
+// --- 组件开始：Ch2 进制转换可视化 (BaseConverter) - 简约/浮窗版 ---
 const BaseConverter = () => {
-    const [dec, setDec] = useState("255");
+  const [input, setInput] = useState("10.25");
+  const [fromBase, setFromBase] = useState(10);
+  const [toBase, setToBase] = useState(2);
+  const [steps, setSteps] = useState<Array<{ title: string; lines: string[] }>>([]);
+  const [result, setResult] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false); // 控制浮窗显示
+
+  // 核心转换逻辑 (保持不变，提取出来方便复用)
+  const calculate = () => {
+    setSteps([]);
+    setResult("");
     
-    // safe parsing
-    const updateDec = (v) => setDec(v);
-    const updateHex = (v) => {
-        const i = parseInt(v, 16);
-        if (!isNaN(i)) setDec(i.toString());
-        else if (v==="") setDec("");
-    }
-    const updateBin = (v) => {
-        const i = parseInt(v, 2);
-        if (!isNaN(i)) setDec(i.toString());
-        else if (v==="") setDec("");
+    if (!input) return;
+    const numStr = input.trim().toUpperCase();
+    const parts = numStr.split('.');
+    if (parts.length > 2) return; 
+
+    const digits = "0123456789ABCDEF";
+    const valMap:any = {};
+    for(let i=0; i<digits.length; i++) valMap[digits[i]] = i;
+
+    // 验证
+    for (let char of numStr) {
+      if (char === '.') continue;
+      if (valMap[char] === undefined || valMap[char] >= fromBase) {
+        setResult("非法字符");
+        return;
+      }
     }
 
-    const intVal = parseInt(dec) || 0;
-    const hexVal = intVal.toString(16).toUpperCase();
-    const binVal = intVal.toString(2);
+    const newSteps: Array<{ title: string; lines: string[] }> = [];
+    
+    // 1. 转十进制
+    let decInt = 0;
+    let decFrac = 0;
+    
+    if (fromBase === 10) {
+      decInt = parseInt(parts[0]);
+      if (parts[1]) decFrac = parseFloat(`0.${parts[1]}`);
+    } else {
+      const intPart = parts[0];
+      const intLines = [];
+      for(let i=0; i<intPart.length; i++) {
+        const digit = valMap[intPart[i]];
+        const power = intPart.length - 1 - i;
+        decInt += digit * Math.pow(fromBase, power);
+        intLines.push(`${intPart[i]}×${fromBase}^${power}=${digit * Math.pow(fromBase, power)}`);
+      }
+      newSteps.push({ title: `${fromBase}进制 -> 10进制 (整数)`, lines: [...intLines, `Sum: ${decInt}`] });
 
-    return (
-        <ToolCard title="进制转换器" icon={ArrowLeftRight} chapter="2">
-            <div className="space-y-3">
-                <div className="flex flex-col">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Decimal (十进制)</label>
-                    <input 
-                        type="number" value={dec} onChange={e => updateDec(e.target.value)}
-                        className="p-1.5 border border-slate-300 rounded font-mono text-sm font-bold text-slate-800 focus:ring-2 ring-indigo-500 outline-none"
-                    />
-                </div>
-                <div className="flex flex-col">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Hexadecimal (十六进制)</label>
-                    <div className="relative">
-                        <span className="absolute left-2 top-1.5 text-slate-400 font-mono text-sm">0x</span>
-                        <input 
-                            type="text" value={hexVal} onChange={e => updateHex(e.target.value)}
-                            className="w-full pl-7 p-1.5 border border-slate-300 rounded font-mono text-sm font-bold text-emerald-700 focus:ring-2 ring-emerald-500 outline-none uppercase"
-                        />
-                    </div>
-                </div>
-                <div className="flex flex-col">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Binary (二进制)</label>
-                    <input 
-                        type="text" value={binVal} onChange={e => updateBin(e.target.value)}
-                        className="p-1.5 border border-slate-300 rounded font-mono text-sm font-bold text-indigo-600 focus:ring-2 ring-indigo-500 outline-none break-all"
-                    />
-                </div>
+      if (parts[1]) {
+        const fracPart = parts[1];
+        const fracLines = [];
+        for(let i=0; i<fracPart.length; i++) {
+          const digit = valMap[fracPart[i]];
+          const power = -(i + 1);
+          const val = digit * Math.pow(fromBase, power);
+          decFrac += val;
+          fracLines.push(`${fracPart[i]}×${fromBase}^(${power})=${val.toFixed(4)}`);
+        }
+        newSteps.push({ title: `${fromBase}进制 -> 10进制 (小数)`, lines: [...fracLines, `Sum: ${decFrac.toFixed(4)}...`] });
+      }
+    }
+
+    // 2. 转目标进制
+    let finalRes = "";
+    if (toBase === 10) {
+      finalRes = (decInt + decFrac).toString();
+      if(fromBase !== 10) newSteps.push({ title: "结果", lines: [`${decInt + decFrac}`]});
+    } else {
+      let tempInt = decInt;
+      let intRes = "";
+      const divLines = [];
+      if (tempInt === 0) intRes = "0";
+      while (tempInt > 0) {
+        const q = Math.floor(tempInt / toBase);
+        const r = tempInt % toBase;
+        divLines.push(`${tempInt}÷${toBase}=${q}...${r}`);
+        intRes = digits[r] + intRes;
+        tempInt = q;
+      }
+      newSteps.push({ title: `10进制 -> ${toBase}进制 (整数除基)`, lines: divLines.length ? divLines : ["0 -> 0"] });
+
+      let fracRes = "";
+      if (decFrac > 0 || (fromBase === 10 && parts[1])) {
+        let tempFrac = decFrac;
+        const mulLines = [];
+        let limit = 6; 
+        while (tempFrac > 0 && limit > 0) {
+          tempFrac = parseFloat(tempFrac.toPrecision(10));
+          const val = tempFrac * toBase;
+          const integer = Math.floor(val);
+          const newFrac = val - integer;
+          mulLines.push(`${tempFrac}×${toBase}=${val} -> 取${integer}`);
+          fracRes += digits[integer];
+          tempFrac = newFrac;
+          limit--;
+        }
+        newSteps.push({ title: `10进制 -> ${toBase}进制 (小数乘基)`, lines: mulLines });
+      }
+      finalRes = intRes + (fracRes ? `.${fracRes}` : "");
+    }
+
+    setResult(finalRes);
+    setSteps(newSteps);
+  };
+
+  // 监听输入变化自动计算结果（简约模式下即时反馈），但步骤留在点击时生成
+  useEffect(() => {
+    if(input) calculate();
+  }, [input, fromBase, toBase]);
+
+  // 打开模态框时重新触发一次计算以确保动画流畅
+  const openDetailModal = () => {
+    setIsModalOpen(true);
+    // 稍微延迟一点重置步骤，让用户看到动画重播
+    setSteps([]);
+    setTimeout(() => calculate(), 100);
+  };
+
+  // --- 渲染部分 ---
+
+  // 1. 简约卡片 (侧边栏显示)
+  const CompactCard = (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm w-full">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+          <Binary className="w-4 h-4 text-blue-400" />
+          进制转换
+        </h3>
+        <button 
+          onClick={openDetailModal}
+          className="text-slate-400 hover:text-white transition-colors"
+          title="查看详细过程与动画"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {/* Input Group */}
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-1">
+            <select 
+              value={fromBase}
+              onChange={(e) => setFromBase(Number(e.target.value))}
+              className="bg-slate-800 text-slate-300 text-xs rounded px-1 py-1 border border-slate-700 w-16"
+            >
+              <option value={2}>BIN</option>
+              <option value={8}>OCT</option>
+              <option value={10}>DEC</option>
+              <option value={16}>HEX</option>
+            </select>
+            <input 
+              type="text" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="flex-1 bg-slate-800 text-slate-200 text-sm rounded px-2 py-1 border border-slate-700 font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-center text-slate-600">
+          <ArrowDown className="w-4 h-4" />
+        </div>
+
+        {/* Result Group */}
+        <div className="flex flex-col gap-1">
+           <div className="flex gap-1">
+            <select 
+              value={toBase}
+              onChange={(e) => setToBase(Number(e.target.value))}
+              className="bg-slate-800 text-slate-300 text-xs rounded px-1 py-1 border border-slate-700 w-16"
+            >
+              <option value={2}>BIN</option>
+              <option value={8}>OCT</option>
+              <option value={10}>DEC</option>
+              <option value={16}>HEX</option>
+            </select>
+            <div className="flex-1 bg-slate-950 text-emerald-400 font-bold font-mono text-sm rounded px-2 py-1 border border-slate-800 overflow-x-auto whitespace-nowrap scrollbar-hide">
+              {result || "..."}
             </div>
-        </ToolCard>
-    )
-}
+          </div>
+        </div>
+
+        <button 
+          onClick={openDetailModal}
+          className="w-full mt-2 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-xs rounded border border-blue-600/30 transition-colors flex items-center justify-center gap-1"
+        >
+          <Play className="w-3 h-3" />
+          显示详细过程动画
+        </button>
+      </div>
+    </div>
+  );
+
+  // 2. 详细浮窗 (Modal)
+  const DetailModal = isModalOpen && (
+    <div className="!m-0 fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-slate-900 w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl border border-slate-700 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/50">
+          <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <Calculator className="w-5 h-5 text-blue-500" />
+            进制转换详解
+          </h3>
+          <button 
+            onClick={() => setIsModalOpen(false)}
+            className="p-1 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Body (Scrollable) */}
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+          
+          {/* Controls inside Modal */}
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 mb-8 bg-slate-800/30 p-4 rounded-xl border border-slate-800">
+             {/* From */}
+             <div className="space-y-2">
+                <label className="text-xs text-slate-400 font-mono ml-1">源数据 (FROM)</label>
+                <div className="flex gap-2">
+                  <select 
+                    value={fromBase}
+                    onChange={(e) => setFromBase(Number(e.target.value))}
+                    className="bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700 outline-none focus:border-blue-500"
+                  >
+                    <option value={2}>2 (BIN)</option>
+                    <option value={8}>8 (OCT)</option>
+                    <option value={10}>10 (DEC)</option>
+                    <option value={16}>16 (HEX)</option>
+                  </select>
+                  <input 
+                    type="text" 
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    className="flex-1 bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700 font-mono outline-none focus:border-blue-500"
+                  />
+                </div>
+             </div>
+
+             {/* Arrow */}
+             <div className="flex items-end justify-center pb-1">
+                <ArrowRight className="w-6 h-6 text-slate-600 hidden md:block" />
+                <ArrowDown className="w-6 h-6 text-slate-600 md:hidden" />
+             </div>
+
+             {/* To */}
+             <div className="space-y-2">
+                <label className="text-xs text-slate-400 font-mono ml-1">目标 (TO)</label>
+                <div className="flex gap-2">
+                  <select 
+                    value={toBase}
+                    onChange={(e) => setToBase(Number(e.target.value))}
+                    className="bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700 outline-none focus:border-blue-500"
+                  >
+                    <option value={2}>2 (BIN)</option>
+                    <option value={8}>8 (OCT)</option>
+                    <option value={10}>10 (DEC)</option>
+                    <option value={16}>16 (HEX)</option>
+                  </select>
+                  <div className="flex-1 bg-slate-950 text-emerald-400 font-bold font-mono text-lg rounded-lg px-3 py-2 border border-slate-800 flex items-center overflow-x-auto">
+                    {result || "?"}
+                  </div>
+                </div>
+             </div>
+          </div>
+
+          {/* Steps Animation */}
+          {steps.length > 0 && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                 <div className="h-px bg-slate-800 flex-1"></div>
+                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">计算过程演示</span>
+                 <div className="h-px bg-slate-800 flex-1"></div>
+              </div>
+              
+              <div className="grid gap-6 md:grid-cols-2">
+                {steps.map((step, stepIdx) => (
+                  <div 
+                    key={stepIdx} 
+                    className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-backwards"
+                    style={{ animationDelay: `${stepIdx * 200}ms` }}
+                  >
+                    <div className="text-sm font-bold text-blue-400 mb-4 flex items-center gap-2 border-b border-slate-700/50 pb-2">
+                      <div className="w-2 h-2 rounded-full bg-blue-500 shadow shadow-blue-500/50"></div>
+                      {step.title}
+                    </div>
+                    <div className="font-mono text-xs space-y-2 text-slate-300">
+                      {step.lines.map((line, lineIdx) => {
+                        const isResultLine = line.includes("=") || line.includes("Sum");
+                        const [left, right] = line.split(/[=]|Sum:/);
+                        return (
+                          <div key={lineIdx} className="flex flex-wrap items-center gap-2">
+                            <span className="opacity-70">{left}</span>
+                            {right && (
+                              <>
+                                <span className="text-slate-600">=</span>
+                                <span className={`font-bold ${line.includes("Sum") ? "text-emerald-400" : "text-amber-200"}`}>
+                                  {right}
+                                </span>
+                              </>
+                            )}
+                            {!right && <span>{line}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="flex justify-center mt-8 animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${steps.length * 200 + 100}ms` }}>
+                <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-sm font-bold border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
+                  <Check className="w-4 h-4" /> 
+                  计算完成: {result}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Footer Hint */}
+        <div className="p-3 bg-slate-950 text-center text-xs text-slate-500 border-t border-slate-800">
+           提示: 浮窗模式下支持更详细的算式展示与步骤拆解
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
 
 // Ch2. IEEE 754
 const Ieee754Calc = () => {
