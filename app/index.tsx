@@ -1528,38 +1528,311 @@ const BaseConverter = () => {
   );
 };
 
-// Ch2. IEEE 754
+// --- 组件开始：Ch2 IEEE 754 可视化 (IEEE754Viz) ---
 const Ieee754Calc = () => {
-  const [number, setNumber] = useState<string | number>(12.5);
-  const data = floatToIEEE754(Number(number));
+  const [input, setInput] = useState("-10.25");
+  const [data, setData] = useState<{
+    s: string; e: string; m: string; 
+    hex: string; bin: string;
+    step_sign: string;
+    step_bin: string;
+    step_norm: string;
+    step_exp: string;
+  } | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // 核心计算逻辑
+  const calculate = () => {
+    const val = parseFloat(input);
+    if (isNaN(val)) {
+      setData(null);
+      return;
+    }
+
+    // 1. 利用 DataView 获取真实的机器码 (最准确)
+    const buffer = new ArrayBuffer(4);
+    const view = new DataView(buffer);
+    view.setFloat32(0, val);
+    const uint32 = view.getUint32(0);
+    const binStr = uint32.toString(2).padStart(32, '0');
+    const hexStr = uint32.toString(16).toUpperCase().padStart(8, '0');
+
+    const s = binStr.substring(0, 1);
+    const e = binStr.substring(1, 9);
+    const m = binStr.substring(9);
+
+    // 2. 模拟手算步骤 (用于教学展示)
+    // 符号
+    const signDesc = val < 0 ? "负数 -> 1" : "正数 -> 0";
+    
+    // 绝对值转二进制 (简化版，用于展示逻辑，不处理非规格化/Inf/NaN的极端情况展示)
+    const absVal = Math.abs(val);
+    let intPart = Math.floor(absVal);
+    let fracPart = absVal - intPart;
+    let binInt = intPart.toString(2);
+    let binFrac = "";
+    // 简单计算几位小数用于展示
+    let tempFrac = fracPart;
+    for(let i=0; i<8; i++) {
+        if(tempFrac === 0) break;
+        tempFrac *= 2;
+        if(tempFrac >= 1) { binFrac += "1"; tempFrac -= 1; }
+        else { binFrac += "0"; }
+    }
+    if (fracPart > 0 && tempFrac > 0) binFrac += "...";
+    
+    const rawBin = `${binInt}${binFrac ? '.'+binFrac : ''}`;
+
+    // 规格化逻辑推导 (仅针对常规数字)
+    let normDesc = "";
+    let expReal = 0;
+    
+    if (absVal === 0) {
+        normDesc = "0.0 (全0特例)";
+        expReal = -127;
+    } else if (intPart >= 1) {
+        // 小数点左移
+        const shift = binInt.length - 1;
+        expReal = shift;
+        const mRaw = (binInt.substring(1) + binFrac).replace(/\./g, '');
+        normDesc = `1.${mRaw} × 2^${shift}`;
+    } else {
+        // 小数点右移 (例如 0.001 -> 1.0 x 2^-3)
+        // 简单模拟，实际直接反推 E
+        const trueExp = parseInt(e, 2) - 127;
+        expReal = trueExp;
+        normDesc = `1.${m}... × 2^${trueExp}`;
+    }
+
+    const expCalc = `${expReal} + 127 = ${expReal+127} -> ${parseInt(e, 2).toString(2).padStart(8,'0')}`;
+
+    setData({
+      s, e, m, 
+      hex: hexStr, 
+      bin: binStr,
+      step_sign: signDesc,
+      step_bin: rawBin,
+      step_norm: normDesc,
+      step_exp: expCalc
+    });
+  };
+
+  useEffect(() => {
+    calculate();
+  }, [input]);
+
+  // --- 渲染部分 ---
+
+  // 迷你位图条 (Compact)
+  const MiniBitBar = data && (
+    <div className="flex w-full h-4 mt-2 rounded overflow-hidden text-[10px] leading-4 text-center text-white font-mono select-none">
+      <div className="w-[3.125%] bg-rose-500" title={`符号: ${data.s}`}>{data.s}</div>
+      <div className="w-[25%] bg-emerald-600" title={`阶码: ${data.e}`}>{parseInt(data.e,2)}</div>
+      <div className="w-[71.875%] bg-blue-600 truncate px-1" title={`尾数: ${data.m}`}>{data.m}</div>
+    </div>
+  );
+
+  // 简约卡片
+  const CompactCard = (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm w-full">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-purple-400" />
+          IEEE 754 转换
+        </h3>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="text-slate-400 hover:text-white transition-colors"
+          title="查看详细图解"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex gap-2 items-center">
+            <span className="text-xs font-mono text-slate-400">DEC</span>
+            <input 
+              type="text" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="flex-1 bg-slate-800 text-slate-200 text-sm rounded px-2 py-1 border border-slate-700 font-mono"
+            />
+        </div>
+        
+        {data ? (
+            <div className="bg-slate-950 rounded p-2 border border-slate-800">
+                <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-500">HEX</span>
+                    <span className="text-purple-400 font-bold tracking-widest">{data.hex}</span>
+                </div>
+                {MiniBitBar}
+            </div>
+        ) : (
+            <div className="text-xs text-red-400 text-center py-2">无效输入</div>
+        )}
+
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="w-full mt-2 py-1.5 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 text-xs rounded border border-purple-600/30 transition-colors flex items-center justify-center gap-1"
+        >
+          <Layers className="w-3 h-3" />
+          显示位结构图解
+        </button>
+      </div>
+    </div>
+  );
+
+  // 详细浮窗
+  const DetailModal = isModalOpen && data && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-700 flex flex-col overflow-hidden animate-in zoom-in-95">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-950">
+           <div className="flex items-center gap-3">
+             <div className="p-2 bg-purple-600/20 rounded-lg"><Cpu className="w-5 h-5 text-purple-400"/></div>
+             <div>
+               <h3 className="text-lg font-bold text-slate-100">IEEE 754 单精度浮点数可视化</h3>
+               <div className="text-xs text-slate-500 font-mono">Formula: V = (-1)^S × 1.M × 2^(E-127)</div>
+             </div>
+           </div>
+           <button onClick={()=>setIsModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-700">
+           
+           {/* 1. 宏观结果 */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+               <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-800">
+                   <div className="text-xs text-slate-500 mb-1">十进制输入</div>
+                   <input 
+                      value={input} 
+                      onChange={e=>setInput(e.target.value)} 
+                      className="w-full bg-transparent text-2xl font-mono font-bold text-white outline-none border-b border-slate-700 focus:border-purple-500 transition-colors"
+                   />
+               </div>
+               <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-800">
+                   <div className="text-xs text-slate-500 mb-1">十六进制机器码</div>
+                   <div className="text-2xl font-mono font-bold text-purple-400 tracking-wider select-all">{data.hex}</div>
+               </div>
+           </div>
+
+           {/* 2. 32位 结构图 (核心) */}
+           <div className="mb-8">
+              <div className="flex justify-between text-xs text-slate-400 mb-2 px-1">
+                  <span>31 (Sign)</span>
+                  <span>30...23 (Exponent)</span>
+                  <span>22...0 (Mantissa)</span>
+              </div>
+              
+              <div className="flex h-16 w-full rounded-xl overflow-hidden shadow-lg font-mono text-lg font-bold leading-[64px] text-center text-white/90">
+                  {/* S */}
+                  <div className="w-[3.125%] bg-rose-600 hover:bg-rose-500 transition-colors group relative cursor-help">
+                      {data.s}
+                      <div className="absolute top-full left-0 mt-2 hidden group-hover:block bg-slate-800 text-rose-300 text-xs p-2 rounded whitespace-nowrap z-10 border border-slate-700 shadow-xl">
+                          符号位 S = {data.s}<br/>{data.step_sign}
+                      </div>
+                  </div>
+                  {/* E */}
+                  <div className="w-[25%] bg-emerald-600 hover:bg-emerald-500 transition-colors group relative cursor-help border-l border-black/20">
+                      {data.e}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block bg-slate-800 text-emerald-300 text-xs p-2 rounded whitespace-nowrap z-10 border border-slate-700 shadow-xl">
+                          阶码 E = {data.e} (Bin)<br/>
+                          真值 = {parseInt(data.e,2)} - 127 = {parseInt(data.e,2)-127}
+                      </div>
+                  </div>
+                  {/* M */}
+                  <div className="w-[71.875%] bg-blue-600 hover:bg-blue-500 transition-colors group relative cursor-help border-l border-black/20 truncate px-2">
+                      {data.m}
+                      <div className="absolute top-full right-0 mt-2 hidden group-hover:block bg-slate-800 text-blue-300 text-xs p-2 rounded whitespace-nowrap z-10 border border-slate-700 shadow-xl text-right">
+                          尾数 M (23位)<br/>
+                          隐藏位 1. + ...
+                      </div>
+                  </div>
+              </div>
+              
+              {/* 图例 */}
+              <div className="flex gap-4 mt-3 justify-center text-xs font-bold">
+                  <span className="flex items-center gap-1.5 text-rose-400"><div className="w-2 h-2 bg-rose-500 rounded-full"></div> 符号 (1位)</span>
+                  <span className="flex items-center gap-1.5 text-emerald-400"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div> 移码阶码 (8位)</span>
+                  <span className="flex items-center gap-1.5 text-blue-400"><div className="w-2 h-2 bg-blue-500 rounded-full"></div> 尾数 (23位)</span>
+              </div>
+           </div>
+
+           {/* 3. 步骤拆解 */}
+           <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 space-y-6">
+               <div className="flex items-center gap-2 mb-4">
+                   <div className="h-px bg-slate-700 flex-1"></div>
+                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">转换推导过程</span>
+                   <div className="h-px bg-slate-700 flex-1"></div>
+               </div>
+
+               {/* Step 1 */}
+               <div className="flex gap-4 animate-in slide-in-from-bottom-2 fade-in duration-500 delay-100">
+                   <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0">1</div>
+                   <div>
+                       <div className="text-sm font-bold text-slate-200">确定符号与二进制形式</div>
+                       <div className="text-xs text-slate-400 font-mono mt-1 space-y-1">
+                           <div>符号: {data.step_sign}</div>
+                           <div>定点二进制: <span className="text-slate-200">{data.step_bin}</span> (绝对值)</div>
+                       </div>
+                   </div>
+               </div>
+
+               {/* Step 2 */}
+               <div className="flex gap-4 animate-in slide-in-from-bottom-2 fade-in duration-500 delay-200">
+                   <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0">2</div>
+                   <div>
+                       <div className="text-sm font-bold text-slate-200">规格化 (科学计数法)</div>
+                       <div className="text-xs text-slate-400 font-mono mt-1">
+                           目标形式: 1.M × 2^E<br/>
+                           结果: <span className="text-blue-300">{data.step_norm}</span>
+                       </div>
+                   </div>
+               </div>
+
+               {/* Step 3 */}
+               <div className="flex gap-4 animate-in slide-in-from-bottom-2 fade-in duration-500 delay-300">
+                   <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0">3</div>
+                   <div>
+                       <div className="text-sm font-bold text-slate-200">计算阶码 (移码 Bias=127)</div>
+                       <div className="text-xs text-slate-400 font-mono mt-1">
+                           真实阶码 + 127 = 移码<br/>
+                           <span className="text-emerald-400">{data.step_exp}</span>
+                       </div>
+                   </div>
+               </div>
+
+               {/* Step 4 */}
+               <div className="flex gap-4 animate-in slide-in-from-bottom-2 fade-in duration-500 delay-400">
+                   <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0">4</div>
+                   <div>
+                       <div className="text-sm font-bold text-slate-200">拼接最终机器码</div>
+                       <div className="text-xs text-slate-400 font-mono mt-1 p-2 bg-slate-900 rounded border border-slate-800">
+                           <span className="text-rose-500 font-bold">{data.s}</span>
+                           <span className="text-slate-600 mx-1">|</span>
+                           <span className="text-emerald-500 font-bold">{data.e}</span>
+                           <span className="text-slate-600 mx-1">|</span>
+                           <span className="text-blue-500 font-bold">{data.m}</span>
+                       </div>
+                   </div>
+               </div>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <ToolCard title="IEEE 754 (32位)" icon={Binary} chapter="2">
-       <div className="space-y-1">
-          <label className="text-xs font-bold text-slate-700 uppercase">十进制输入</label>
-          <input 
-            type="number" value={number} onChange={e => setNumber(e.target.value)}
-            className="w-full p-2 bg-white border border-slate-300 rounded-md text-slate-900 font-mono text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-          />
-       </div>
-       <div className="flex h-10 rounded-md overflow-hidden border border-slate-300 shadow-sm text-xs font-bold">
-          <div className="w-[10%] bg-rose-200 text-rose-900 flex items-center justify-center border-r border-rose-300" title="Sign">{data.sign}</div>
-          <div className="w-[30%] bg-emerald-200 text-emerald-900 flex items-center justify-center border-r border-emerald-300" title="Exponent">{data.exponent}</div>
-          <div className="w-[60%] bg-blue-200 text-blue-900 flex items-center justify-center overflow-hidden whitespace-nowrap" title="Mantissa">{data.fraction.substring(0,8)}..</div>
-       </div>
-       <div className="grid grid-cols-2 gap-2 text-xs font-mono text-slate-600">
-          <div className="bg-slate-100 p-1.5 rounded border border-slate-200">
-             <span className="block text-slate-400 text-[10px]">HEX</span>
-             <span className="font-bold text-slate-800">{data.hex}</span>
-          </div>
-          <div className="bg-slate-100 p-1.5 rounded border border-slate-200">
-             <span className="block text-slate-400 text-[10px]">E (Real)</span>
-             <span className="font-bold text-slate-800">{parseInt(data.exponent, 2) - 127}</span>
-          </div>
-       </div>
-    </ToolCard>
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
   );
 };
+// --- 组件结束 ---
 
 // Ch2. Complement
 const ComplementCalc = () => {
