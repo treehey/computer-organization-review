@@ -3007,6 +3007,15 @@ const App = () => {
       if (el) {
           el.scrollIntoView({ behavior: 'smooth' });
           setActiveChapterId(id);
+          
+          // Sync right sidebar
+          const chapterIndex = CHAPTERS.findIndex(c => c.id === id);
+          if (chapterIndex >= 0 && rightSidebarRef.current) {
+              const toolSection = document.getElementById(`tools-chapter-${chapterIndex + 1}`);
+              if (toolSection) {
+                  toolSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+          }
       }
   };
 
