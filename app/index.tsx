@@ -816,83 +816,94 @@ Cache 缓存主存中最活跃的副本。CPU 访存时首先访问 Cache，若�
 
 // --- Helper Functions ---
 
-const floatToIEEE754 = (val) => {
-  if (isNaN(val)) return { sign: "0", exponent: "00000000", fraction: "00000000000000000000000" };
+// Convert number to IEEE754 single-precision bit fields
+const floatToIEEE754 = (val: number) => {
   const buffer = new ArrayBuffer(4);
   const view = new DataView(buffer);
   view.setFloat32(0, val);
   const bits = view.getUint32(0).toString(2).padStart(32, "0");
+    const hex = view.getUint32(0).toString(16).toUpperCase().padStart(8, "0");
   return {
-    sign: bits.substring(0, 1),
-    exponent: bits.substring(1, 9),
-    fraction: bits.substring(9),
-    hex: "0x" + view.getUint32(0).toString(16).toUpperCase().padStart(8, "0")
+    sign: bits.slice(0, 1),
+    exponent: bits.slice(1, 9),
+    fraction: bits.slice(9),
+        hex,
   };
 };
 
-const toBinary = (n, bits) => {
-  if (isNaN(n)) return "0".repeat(bits);
-  if (n < 0) {
-    n = (1 << bits) + n;
-  }
-  return n.toString(2).padStart(bits, "0").slice(-bits);
+// Two's-complement friendly binary string helper
+const toBinary = (val: number, bits = 8) => {
+  const mod = 2 ** bits;
+  const wrapped = ((val % mod) + mod) % mod;
+  return wrapped.toString(2).padStart(bits, "0");
 };
 
-// Generates a simple ID from text
-const generateId = (text) => {
-    return text.toString().trim().replace(/\s+/g, '-');
+// Slug generator for headings (keeps Chinese characters)
+const generateId = (content: React.ReactNode): string => {
+    const raw = React.Children.toArray(content)
+        .map((c) => (typeof c === "string" ? c : ""))
+        .join("");
+  return raw
+    .replace(/\s+/g, "-")
+    .replace(/[^-\w\u4e00-\u9fa5]/g, "")
+    .toLowerCase();
 };
 
+// Navigation source of truth
 const CHAPTERS = [
-    { id: "第一部分：计算机系统概述-(约-5分)", title: "1. 计算机系统概述", range: [0, 1] },
-    { id: "第二部分：数据的机器级表示-(约-10分)", title: "2. 数据的机器级表示", range: [1, 5] },
-    { id: "第三部分：运算方法和运算部件-(约-10分)", title: "3. 运算方法和运算部件", range: [5, 7] },
-    { id: "第四部分：指令系统-(约15分)", title: "4. 指令系统", range: [7, 8] },
-    { id: "第五部分：中央处理器-(约15分)", title: "5. 中央处理器", range: [8, 9] },
-    { id: "第六部分：指令流水线-(约-15分)", title: "6. 指令流水线", range: [9, 10] },
-    { id: "第七部分：存储器层次结构-(约-20分)", title: "7. 存储器层次结构", range: [10, 11] },
-    { id: "第八部分：系统互联及输入输出组织-(约-10分)", title: "8. 系统互联与IO", range: [11, 12] },
-];
+  "第一部分：计算机系统概述 (约 5分)",
+  "第二部分：数据的机器级表示 (约 10分)",
+  "第三部分：运算方法和运算部件 (约 10分)",
+  "第四部分：指令系统 (约15分)",
+  "第五部分：中央处理器 (约15分)",
+  "第六部分：指令流水线 (约 15分)",
+  "第七部分：存储器层次结构 (约 20分)",
+  "第八部分：系统互联及输入输出组织 (约 10分)",
+].map((title) => ({ id: generateId(title), title }));
 
-// --- Interactive Visualizations ---
+type InputFieldProps = {
+    label: string;
+    value: number;
+    onChange: (val: number) => void;
+    step?: string;
+    suffix?: string;
+};
 
-interface ToolCardProps {
-  title: string;
-  icon: any;
-  children?: React.ReactNode;
-  chapter?: string;
-}
-
-const ToolCard = ({ title, icon: Icon, children, chapter }: ToolCardProps) => (
-  <div className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden mb-6">
-    <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4 text-indigo-700" />
-        <h3 className="font-bold text-slate-800 text-sm">{title}</h3>
-      </div>
-      {chapter && <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-500 font-medium">Ch.{chapter}</span>}
+const InputField = ({ label, value, onChange, step = "1", suffix }: InputFieldProps) => (
+    <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-bold text-slate-500 uppercase">{label}</label>
+        <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-md px-2 py-1.5">
+            <input
+                type="number"
+                value={value}
+                step={step}
+                onChange={(e) => onChange(Number(e.target.value) || 0)}
+                className="w-full bg-transparent outline-none font-mono text-sm text-slate-900"
+            />
+            {suffix && <span className="text-[10px] text-slate-400 font-bold">{suffix}</span>}
+        </div>
     </div>
-    <div className="p-4 space-y-4">
-      {children}
-    </div>
-  </div>
 );
 
-const InputField = ({ label, value, onChange, step = "1", suffix = undefined }) => (
-  <div className="space-y-1">
-    <div className="flex justify-between">
-      <label className="text-xs font-bold text-slate-800 uppercase tracking-wide">{label}</label>
-      {suffix && <span className="text-xs text-slate-500 font-medium">{suffix}</span>}
-    </div>
-    <input 
-      type="number" step={step}
-      value={value} onChange={e => onChange(parseFloat(e.target.value))}
-      className="w-full p-2 bg-white border border-slate-300 hover:border-slate-400 rounded-md text-slate-900 font-mono text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-bold"
-    />
-  </div>
-);
+type ToolCardProps = {
+    title: string;
+    icon: React.ComponentType<{ className?: string }>;
+    chapter: string;
+    children: React.ReactNode;
+};
 
-// Ch1. Abstraction Layers
+const ToolCard = ({ title, icon: Icon, chapter, children }: ToolCardProps) => (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 space-y-3">
+        <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+                <Icon className="w-4 h-4 text-indigo-600" />
+                <div className="text-sm font-bold text-slate-800">{title}</div>
+            </div>
+            <div className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">Ch {chapter}</div>
+        </div>
+        {children}
+    </div>
+);
 const AbstractionLayersViz = () => {
     const [selected, setSelected] = useState<number | null>(4); // Default to ISA
 
@@ -1450,6 +1461,198 @@ const BitShifter = () => {
     )
 }
 
+// Ch3. Parallel (Carry-Lookahead) Adder 4-bit — animated steps
+const ParallelAdderViz = () => {
+    const [a, setA] = useState(9);
+    const [b, setB] = useState(6);
+    const [step, setStep] = useState(0); // 0 输入,1 P/G,2 C1,3 C2/C3,4 Sum/Cout
+    const [playing, setPlaying] = useState(false);
+    const [speedMs, setSpeedMs] = useState(900);
+
+    // LSB-first arrays for easier carry logic
+    const aBitsLsb = toBinary(a, 4).split('').map(Number).reverse();
+    const bBitsLsb = toBinary(b, 4).split('').map(Number).reverse();
+    // MSB-first for展示
+    const aBitsMsb = toBinary(a, 4).split('');
+    const bBitsMsb = toBinary(b, 4).split('');
+
+    const p: number[] = [];
+    const g: number[] = [];
+    const c: number[] = [0];
+    const s: number[] = [];
+
+    for (let i = 0; i < 4; i++) {
+        p[i] = aBitsLsb[i] ^ bBitsLsb[i];
+        g[i] = aBitsLsb[i] & bBitsLsb[i];
+        c[i + 1] = g[i] | (p[i] & c[i]);
+        s[i] = p[i] ^ c[i];
+    }
+
+    const sumVal = (s[3] << 3) | (s[2] << 2) | (s[1] << 1) | s[0];
+    const carryOut = c[4];
+
+    // 播放动画：重置到 step 0，依次推进到 4
+    useEffect(() => {
+        if (!playing) return;
+        setStep(0);
+        const timer = setInterval(() => {
+            setStep((prev) => {
+                if (prev >= 4) {
+                    clearInterval(timer);
+                    setPlaying(false);
+                    return prev;
+                }
+                return prev + 1;
+            });
+        }, speedMs);
+        return () => clearInterval(timer);
+    }, [playing, a, b, speedMs]);
+
+    const rows = [3, 2, 1, 0]; // MSB -> LSB for display
+    const phaseClass = (phaseNeeded: number) => step >= phaseNeeded ? 'bg-indigo-100 border-indigo-300 text-indigo-800 font-bold' : 'bg-white border-slate-200 text-slate-700';
+    const stepTips = [
+        '步骤0：先看输入位 A/B (MSB→LSB)。',
+        '步骤1：计算每一位的传递项 P = A xor B、生成项 G = A & B。',
+        '步骤2：用 P0/G0 求出 C1 (最低位进位)。',
+        '步骤3：继续级联求出 C2、C3 (提前进位)。',
+        '步骤4：用 S = P xor C，得到和与 Cout。'
+    ];
+
+    return (
+        <ToolCard title="并行加法器 (4-bit CLA)" icon={Zap} chapter="3">
+            <div className="grid grid-cols-2 gap-3 mb-3 items-end">
+                <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">A (0-15)</label>
+                    <input 
+                      type="number" min={0} max={15} value={a}
+                      onChange={e => {setA(Math.max(0, Math.min(15, parseInt(e.target.value) || 0))); setStep(0); setPlaying(false);}}
+                      className="w-full p-2 bg-white border border-slate-300 rounded font-mono text-sm"
+                    />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">B (0-15)</label>
+                    <input 
+                      type="number" min={0} max={15} value={b}
+                      onChange={e => {setB(Math.max(0, Math.min(15, parseInt(e.target.value) || 0))); setStep(0); setPlaying(false);}}
+                      className="w-full p-2 bg-white border border-slate-300 rounded font-mono text-sm"
+                    />
+                </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex gap-2 flex-wrap">
+                    <button
+                        onClick={() => {setPlaying(false); setStep((s) => Math.max(0, s - 1));}}
+                        className="px-3 py-2 bg-slate-100 text-slate-700 rounded text-xs font-bold border border-slate-200 hover:bg-slate-200"
+                    >上一步</button>
+                    <button
+                        onClick={() => {setPlaying(false); setStep((s) => Math.min(4, s + 1));}}
+                        className="px-3 py-2 bg-slate-100 text-slate-700 rounded text-xs font-bold border border-slate-200 hover:bg-slate-200"
+                    >下一步</button>
+                    <button
+                        onClick={() => {setPlaying(false); setStep(0);}}
+                        className="px-3 py-2 bg-slate-100 text-slate-700 rounded text-xs font-bold border border-slate-200 hover:bg-slate-200"
+                    >复位</button>
+                    <button
+                        onClick={() => {setStep(0); setPlaying(true);}}
+                        className="px-3 py-2 bg-indigo-600 text-white rounded text-xs font-bold shadow hover:bg-indigo-700"
+                    >自动播放</button>
+                    <button
+                        onClick={() => {setPlaying(false); setStep(4);}}
+                        className="px-3 py-2 bg-slate-100 text-slate-700 rounded text-xs font-bold border border-slate-200 hover:bg-slate-200"
+                    >直接结果</button>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span>速度</span>
+                    <input 
+                      type="range" min="300" max="2000" step="100" value={speedMs}
+                      onChange={(e) => setSpeedMs(parseInt(e.target.value))}
+                      className="w-28 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span className="font-bold text-indigo-600">{Math.round(speedMs)}ms/步</span>
+                </div>
+            </div>
+
+            <div className="text-xs text-slate-600 mb-2 flex items-center justify-between">
+                <span>逐步展示公式：C(i+1) = G(i) + P(i) · C(i)，自低位到高位。</span>
+                <span className="text-[10px] text-indigo-600 font-bold">{stepTips[step]}</span>
+            </div>
+
+            <div className="flex items-center gap-2 mb-3 text-[11px] text-slate-500">
+                {["输入", "P/G", "C1", "C2-C3", "Sum/Cout"].map((label, i) => (
+                    <div key={label} className="flex items-center gap-1">
+                        <div className={`w-2 h-2 rounded-full ${step >= i ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
+                        <span>{label}</span>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-mono">
+                <div className="p-2 border border-slate-200 rounded bg-white">
+                    <div className="text-[10px] text-slate-400 font-bold mb-1">输入位 (MSB→LSB)</div>
+                    <div className="flex gap-2 items-center">
+                        <span className="text-slate-500">A</span>
+                        <div className="flex flex-1 gap-1">
+                            {aBitsMsb.map((bit, idx) => (
+                                <div key={`a-${idx}`} className={`flex-1 py-1 rounded border text-center font-bold ${step >= 0 ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-white border-slate-100 text-slate-400'}`}>{bit}</div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex gap-2 items-center mt-1">
+                        <span className="text-slate-500">B</span>
+                        <div className="flex flex-1 gap-1">
+                            {bBitsMsb.map((bit, idx) => (
+                                <div key={`b-${idx}`} className={`flex-1 py-1 rounded border text-center font-bold ${step >= 0 ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-white border-slate-100 text-slate-400'}`}>{bit}</div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                <div className="p-2 border border-slate-200 rounded bg-white space-y-1">
+                    <div className="text-[10px] text-slate-400 font-bold">逐位公式</div>
+                    {rows.map((idx) => (
+                        <div key={`f-${idx}`} className={`px-2 py-2 rounded border text-[11px] font-mono ${step >= 1 ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-white border-slate-200 text-slate-600'}`}>
+                            <div className="text-[10px] font-bold mb-1">Bit {idx}</div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                                <span>
+                                    P = A{idx} ⊕ B{idx} = {Number(aBitsMsb[3-idx])} ⊕ {Number(bBitsMsb[3-idx])} = {p[idx]}
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 whitespace-nowrap">
+                                <span>
+                                    G = A{idx} · B{idx} = {Number(aBitsMsb[3-idx])} · {Number(bBitsMsb[3-idx])} = {g[idx]}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2 text-center text-[11px] font-mono">
+                <div className="font-bold text-slate-500">Bit</div>
+                <div className="font-bold text-slate-500">P</div>
+                <div className="font-bold text-slate-500">G</div>
+                <div className="font-bold text-slate-500">C</div>
+                <div className="font-bold text-slate-500">S</div>
+                {rows.map((idx) => (
+                    <React.Fragment key={idx}>
+                        <div className="px-2 py-1 rounded bg-slate-100 text-slate-600">{idx}</div>
+                        <div className={`px-2 py-1 rounded border ${phaseClass(1)}`}>{p[idx]}</div>
+                        <div className={`px-2 py-1 rounded border ${phaseClass(1)}`}>{g[idx]}</div>
+                        <div className={`px-2 py-1 rounded border ${phaseClass(idx === 0 ? 2 : idx <= 2 ? 3 : 4)}`}>{c[idx]}</div>
+                        <div className={`px-2 py-1 rounded border ${phaseClass(4)} font-bold text-indigo-700`}>{s[idx]}</div>
+                    </React.Fragment>
+                ))}
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm font-mono">
+                <div className={`p-3 rounded border ${phaseClass(4)} bg-indigo-50 border-indigo-200 text-indigo-800 font-bold`}>Sum = {sumVal} (0b{toBinary(sumVal,4)})</div>
+                <div className={`p-3 rounded border ${phaseClass(4)} ${carryOut ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                    Cout = {carryOut}
+                </div>
+            </div>
+        </ToolCard>
+    );
+};
+
 // Ch4. MIPS Instruction Format
 const MipsVisualizer = () => {
   const [instrType, setInstrType] = useState('R'); // R, I, J
@@ -1941,11 +2144,11 @@ const ControlSignalViewer = () => {
         ))}
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
-        {Object.entries(current).map(([sig, val]) => (
+                {Object.entries(current).map(([sig, val]) => (
            <div key={sig} className="flex justify-between p-2 bg-slate-50 border border-slate-200 rounded">
               <span className="font-semibold text-slate-700">{sig}</span>
               <span className={`font-mono font-bold ${val === 1 ? 'text-emerald-600' : val === 0 ? 'text-slate-400' : 'text-orange-500'}`}>
-                {val}
+                                {String(val)}
               </span>
            </div>
         ))}
@@ -2959,8 +3162,10 @@ const App = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [docWidth, setDocWidth] = useState(896);
     const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
-    const [viewMode, setViewMode] = useState<'notes' | 'pdf'>('notes');
+    const [viewMode, setViewMode] = useState<'notes' | 'pdf' | 'exercises'>('notes');
     const [currentPdf, setCurrentPdf] = useState<string | null>(null);
+    const [exerciseContent, setExerciseContent] = useState<string>('');
+    const [sidebarWidth, setSidebarWidth] = useState<number>(420);
   // Ref for the right sidebar to enable programmatic scrolling
   const rightSidebarRef = useRef<HTMLDivElement>(null);
   
@@ -3023,6 +3228,18 @@ const App = () => {
       setCurrentPdf(pdfName);
       setViewMode('pdf');
       setActiveChapterId(pdfName);
+  };
+
+  const openExercises = async () => {
+      try {
+          const response = await fetch('./习题.md');
+          const content = await response.text();
+          setExerciseContent(content);
+          setViewMode('exercises');
+          setActiveChapterId('exercises');
+      } catch (error) {
+          console.error('Failed to load exercises:', error);
+      }
   };
 
   return (
@@ -3128,6 +3345,21 @@ const App = () => {
                     </div>
                 </button>
             ))}
+
+            <div className="px-3 py-2 mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">习题与资料</div>
+            <button
+                onClick={openExercises}
+                className={`w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 border-l-2 ${
+                    viewMode === 'exercises'
+                    ? 'bg-white border-indigo-600 text-indigo-700 shadow-sm font-medium' 
+                    : 'border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
+                }`}
+            >
+                <div className="flex items-center gap-2 truncate">
+                    <BookOpen className="w-3.5 h-3.5 opacity-70" />
+                    习题详解
+                </div>
+            </button>
           </div>
         </aside>
 
@@ -3145,6 +3377,28 @@ const App = () => {
                         title="PDF Viewer"
                     />
                 </div>
+             ) : viewMode === 'exercises' ? (
+                <article className="prose prose-slate prose-lg max-w-none 
+                  prose-headings:font-bold prose-headings:text-slate-900 prose-headings:scroll-mt-20
+                  prose-h1:text-3xl prose-h1:mb-8 prose-h1:pb-4 prose-h1:border-b prose-h1:border-slate-100
+                  prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-6 prose-h2:text-indigo-700
+                  prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-4 prose-h3:text-slate-800
+                  prose-p:text-slate-600 prose-p:leading-7
+                  prose-strong:text-indigo-900 prose-strong:font-bold
+                  [&_:not(pre)>code]:text-indigo-600 [&_:not(pre)>code]:bg-indigo-50 [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:rounded-md [&_:not(pre)>code]:before:content-none [&_:not(pre)>code]:after:content-none
+                  prose-pre:bg-slate-900 prose-pre:text-slate-50 prose-pre:rounded-xl prose-pre:shadow-lg
+                  prose-table:text-sm
+                  prose-th:bg-slate-50 prose-th:text-slate-700
+                  prose-td:text-slate-600
+                ">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm, remarkMath]} 
+                    rehypePlugins={[rehypeKatex]}
+                    components={markdownComponents as any}
+                  >
+                    {exerciseContent}
+                  </ReactMarkdown>
+                </article>
              ) : isEditing ? (
                 <textarea
                   className="w-full h-full min-h-[80vh] resize-none outline-none font-mono text-sm text-slate-700 leading-relaxed"
@@ -3179,15 +3433,37 @@ const App = () => {
            </div>
         </main>
 
-        {/* Right Sidebar Tools */}
-        <aside 
-            ref={rightSidebarRef}
-            className={`
-                bg-slate-50 border-l border-slate-200 overflow-y-auto transition-all duration-300 ease-in-out scrollbar-thin
-                ${isSidebarOpen ? 'w-[420px] translate-x-0' : 'w-0 translate-x-full opacity-0'}
-            `}
-        >
-            <div className="p-6 w-[420px]">
+                {/* Right Sidebar Tools */}
+                <aside 
+                        ref={rightSidebarRef}
+                        className={`bg-slate-50 border-l border-slate-200 overflow-y-auto transition-all duration-300 ease-in-out scrollbar-thin relative ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                        style={{ width: isSidebarOpen ? `${sidebarWidth}px` : '0px' }}
+                >
+                        {/* Drag handle (fixed overlay, doesn't take layout space) */}
+                        {isSidebarOpen && (
+                            <div
+                                className="fixed top-14 h-[calc(100vh-3.5rem)] w-2 cursor-col-resize group z-40"
+                                style={{ left: `calc(100vw - ${sidebarWidth}px)` }}
+                                onMouseDown={(e) => {
+                                    const startX = e.clientX;
+                                    const startW = sidebarWidth;
+                                    const onMove = (ev: MouseEvent) => {
+                                        const delta = startX - ev.clientX;
+                                        const next = Math.min(720, Math.max(300, startW + delta));
+                                        setSidebarWidth(next);
+                                    };
+                                    const onUp = () => {
+                                        window.removeEventListener('mousemove', onMove);
+                                        window.removeEventListener('mouseup', onUp);
+                                    };
+                                    window.addEventListener('mousemove', onMove);
+                                    window.addEventListener('mouseup', onUp);
+                                }}
+                            >
+                                <div className="h-full w-1 bg-transparent group-hover:bg-indigo-300" />
+                            </div>
+                        )}
+                        <div className="p-6" style={{ width: `${sidebarWidth}px` }}>
                 <div className="flex items-center justify-between mb-6">
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
                         可视化工具箱
@@ -3215,6 +3491,7 @@ const App = () => {
                 <div id="tools-chapter-3" className="space-y-6 mt-12 scroll-mt-6">
                     <div className="text-xs font-bold text-slate-300 uppercase pl-1 mb-2 border-b border-slate-200 pb-1">Ch3. 运算方法</div>
                     <AluSimulator />
+                    <ParallelAdderViz />
                     <BitShifter />
                 </div>
 
