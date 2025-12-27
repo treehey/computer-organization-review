@@ -3813,6 +3813,354 @@ const ForwardingUnitViz = () => {
     );
 };
 
+// --- 组件开始：Ch6 流水线控制冒险可视化 (v11.0 - Dual Mode) ---
+const ControlHazardViz = () => {
+  const [strategy, setStrategy] = useState<"standard" | "early">("standard"); // standard=EX检测, early=ID检测
+  const [branchTaken, setBranchTaken] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [cycle, setCycle] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false); // 浮窗状态
+  
+  // 流水线状态: [IF, ID, EX, MEM, WB]
+  const [pipeline, setPipeline] = useState<(string | null)[]>([null, null, null, null, null]);
+  const [flushedIndices, setFlushedIndices] = useState<number[]>([]); 
+
+  const instructionSequence = [
+    { id: "beq", asm: "beq $1,$2,T", type: "branch" },
+    { id: "add", asm: "add $3,$4,$5", type: "next" },
+    { id: "sub", asm: "sub $6,$7,$8", type: "next" },
+    { id: "and", asm: "and $9,$0,$1", type: "next" },
+    { id: "target", asm: "T: lw $10,0($1)", type: "target" },
+    { id: "or", asm: "or $11,$12,$13", type: "target_next" },
+  ];
+
+  const reset = () => {
+    setIsPlaying(false);
+    setCycle(0);
+    setPipeline([null, null, null, null, null]);
+    setFlushedIndices([]);
+  };
+
+  const openModal = () => {
+    setIsModalOpen(true);
+    reset();
+  };
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setCycle(c => {
+          if (c >= 8) { setIsPlaying(false); return c; }
+          const nextCycle = c + 1;
+          setPipeline(prev => {
+            const nextPipe = [...prev];
+            let nextFlushed: number[] = [];
+            let pcSource = "seq";
+
+            nextPipe[4] = prev[3]; // WB
+            nextPipe[3] = prev[2]; // MEM
+            nextPipe[2] = prev[1]; // EX
+            nextPipe[1] = prev[0]; // ID
+            
+            if (strategy === "standard") {
+              if (prev[2] === "beq" && branchTaken) {
+                nextPipe[2] = null; // Flush ID->EX
+                nextPipe[1] = null; // Flush IF->ID
+                nextFlushed = [1, 2]; 
+                pcSource = "target";
+              }
+            } else {
+              if (prev[1] === "beq" && branchTaken) {
+                nextPipe[1] = null; // Flush IF->ID
+                nextFlushed = [1];
+                pcSource = "target";
+              }
+            }
+
+            if (pcSource === "target") {
+               nextPipe[0] = "target";
+            } else {
+               const lastFetched = prev[0];
+               if (nextPipe[0] === "target") { } 
+               else if (prev.includes("target")) { nextPipe[0] = "or"; } 
+               else if (prev.includes("or")) { nextPipe[0] = null; } 
+               else {
+                   if (lastFetched === null) nextPipe[0] = "beq";
+                   else if (lastFetched === "beq") nextPipe[0] = "add";
+                   else if (lastFetched === "add") nextPipe[0] = "sub";
+                   else if (lastFetched === "sub") nextPipe[0] = "and";
+               }
+            }
+            setFlushedIndices(nextFlushed);
+            return nextPipe;
+          });
+          return nextCycle;
+        });
+      }, 1500); // 稍微调快一点适应卡片
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying, strategy, branchTaken]);
+
+  const getInstrColor = (id: string | null) => {
+    if (!id) return "bg-slate-100 border-slate-200 text-slate-300";
+    if (id === "beq") return "bg-amber-100 border-amber-300 text-amber-700";
+    if (id === "target" || id === "or") return "bg-emerald-100 border-emerald-300 text-emerald-700";
+    return "bg-blue-100 border-blue-300 text-blue-700";
+  };
+
+  const getInstrText = (id: string | null) => {
+    const instr = instructionSequence.find(i => i.id === id);
+    return instr ? instr.asm.split(' ')[0] : "nop";
+  };
+
+  // --- 1. 简约卡片 (Compact Card) ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-amber-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <GitBranch className="w-4 h-4 text-amber-600" />
+          流水线控制冒险
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-amber-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {/* Mini Pipeline View */}
+        <div className="flex gap-1">
+            {["IF","ID","EX","MEM","WB"].map((stage, idx) => (
+                <div key={stage} className={`flex-1 h-12 rounded border flex flex-col items-center justify-center text-[10px] font-mono transition-all ${
+                    flushedIndices.includes(idx) 
+                    ? "bg-red-50 border-red-200 text-red-500 animate-pulse" 
+                    : getInstrColor(pipeline[idx])
+                }`}>
+                    <span className="opacity-50 text-[8px]">{stage}</span>
+                    <span className="font-bold">{flushedIndices.includes(idx) ? "X" : getInstrText(pipeline[idx])}</span>
+                </div>
+            ))}
+        </div>
+
+        {/* Status Bar */}
+        <div className="flex justify-between items-center text-xs bg-slate-50 p-2 rounded border border-slate-100">
+            <div>
+                <span className="text-slate-400 font-bold uppercase mr-2">Cycle</span>
+                <span className="text-xl font-mono font-bold text-blue-600">{cycle}</span>
+            </div>
+            <div>
+                {flushedIndices.length > 0 ? (
+                    <span className="text-red-500 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Hazard!</span>
+                ) : (
+                    <span className="text-emerald-500 font-bold flex items-center gap-1"><Check className="w-3 h-3"/> Normal</span>
+                )}
+            </div>
+        </div>
+
+        <button onClick={openModal} className="w-full py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs rounded-lg flex items-center justify-center gap-2 transition-all border border-amber-200 font-bold">
+          <Play className="w-3 h-3 fill-current" /> 演示冲刷 (Flush) 过程
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 2. 详细浮窗 (Detail Modal) ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-100 rounded-lg"><GitBranch className="w-6 h-6 text-amber-600"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">流水线控制冒险 (Control Hazards)</h3>
+                    <div className="text-xs text-slate-500 font-medium">分支预测失败时的 Flush 机制演示</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+                <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button onClick={() => { setStrategy("standard"); reset(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${strategy === "standard" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}>
+                        标准模式 (EX)
+                    </button>
+                    <button onClick={() => { setStrategy("early"); reset(); }} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${strategy === "early" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500"}`}>
+                        优化模式 (ID)
+                    </button>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+            </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 flex flex-col gap-6">
+            
+            {/* Viz Container */}
+            <div className="relative w-full aspect-[2.5/1] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden select-none ring-4 ring-slate-50">
+                {/* SVG from previous step */}
+                <div className="absolute inset-0" style={{backgroundImage: 'linear-gradient(#E2E8F0 1px, transparent 1px), linear-gradient(90deg, #E2E8F0 1px, transparent 1px)', backgroundSize: '20px 20px', opacity: 0.5}}></div>
+
+                <svg viewBox="0 0 1000 400" className="w-full h-full relative z-10">
+                    <defs>
+                        <marker id="arrow-gray" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#94A3B8" />
+                        </marker>
+                        <filter id="flush-glow">
+                            <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                            <feMerge>
+                                <feMergeNode in="coloredBlur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+
+                    {/* 1. 流水线阶段划分 */}
+                    <g stroke="#CBD5E1" strokeWidth="2" strokeDasharray="5,5">
+                        <line x1="200" y1="20" x2="200" y2="380" />
+                        <line x1="400" y1="20" x2="400" y2="380" />
+                        <line x1="600" y1="20" x2="600" y2="380" />
+                        <line x1="800" y1="20" x2="800" y2="380" />
+                    </g>
+                    <g fontSize="12" fontWeight="bold" fill="#64748B" textAnchor="middle">
+                        <text x="100" y="30">IF 取指</text>
+                        <text x="300" y="30">ID 译码</text>
+                        <text x="500" y="30">EX 执行</text>
+                        <text x="700" y="30">MEM 访存</text>
+                        <text x="900" y="30">WB 写回</text>
+                    </g>
+
+                    {/* 2. 静态硬件部件 */}
+                    <g stroke="#94A3B8" strokeWidth="2" fill="white">
+                        <rect x="60" y="150" width="80" height="100" rx="4" />
+                        <text x="100" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">IM</text>
+                        <rect x="260" y="150" width="80" height="100" rx="4" />
+                        <text x="300" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">Regs</text>
+                        <path d="M460 140 L540 160 L540 240 L460 260 L460 210 L450 200 L460 190 Z" />
+                        <text x="510" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">ALU</text>
+                        <rect x="660" y="150" width="80" height="100" rx="4" />
+                        <text x="700" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">DM</text>
+                    </g>
+
+                    {/* 3. 分支比较器 */}
+                    <g transform={`translate(${strategy === "early" ? 280 : 480}, 80)`} className="transition-all duration-500">
+                        <circle cx="20" cy="20" r="15" fill="#FEF3C7" stroke="#D97706" />
+                        <text x="20" y="24" textAnchor="middle" fontSize="14" fill="#D97706" fontWeight="bold" stroke="none">=</text>
+                        <text x="20" y="-10" textAnchor="middle" fontSize="10" fill="#D97706" stroke="none">Comparator</text>
+                        {strategy === "early" ? (
+                            <path d="M-20 70 L5 30" stroke="#F59E0B" strokeWidth="2" fill="none" markerEnd="url(#arrow-gray)"/>
+                        ) : (
+                            <path d="M-20 70 L5 30" stroke="#F59E0B" strokeWidth="2" fill="none" markerEnd="url(#arrow-gray)"/>
+                        )}
+                    </g>
+
+                    {/* 4. 流动指令块 */}
+                    {/* IF */}
+                    <g transform="translate(60, 280)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[0])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{getInstrText(pipeline[0])}</text>
+                    </g>
+                    {/* ID */}
+                    <g transform="translate(260, 280)">
+                        <rect width="80" height="30" rx="4" 
+                                className={`${flushedIndices.includes(1) ? "fill-red-100 stroke-red-500 text-red-500 animate-pulse" : getInstrColor(pipeline[1])} transition-all duration-300 shadow-sm`} 
+                                strokeWidth="1" fillOpacity="0.2" fill="currentColor"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">
+                            {flushedIndices.includes(1) ? "FLUSHED!" : getInstrText(pipeline[1])}
+                        </text>
+                        {flushedIndices.includes(1) && <path d="M10 5 L70 25 M10 25 L70 5" stroke="#EF4444" strokeWidth="3" opacity="0.5"/>}
+                    </g>
+                    {/* EX */}
+                    <g transform="translate(460, 280)">
+                        <rect width="80" height="30" rx="4" 
+                                className={`${flushedIndices.includes(2) ? "fill-red-100 stroke-red-500 text-red-500 animate-pulse" : getInstrColor(pipeline[2])} transition-all duration-300 shadow-sm`} 
+                                strokeWidth="1" fillOpacity="0.2" fill="currentColor"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">
+                            {flushedIndices.includes(2) ? "FLUSHED!" : getInstrText(pipeline[2])}
+                        </text>
+                        {flushedIndices.includes(2) && <path d="M10 5 L70 25 M10 25 L70 5" stroke="#EF4444" strokeWidth="3" opacity="0.5"/>}
+                    </g>
+                    {/* MEM */}
+                    <g transform="translate(660, 280)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[3])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{getInstrText(pipeline[3])}</text>
+                    </g>
+                    {/* WB */}
+                    <g transform="translate(860, 280)">
+                        <rect width="80" height="30" rx="4" className={`${getInstrColor(pipeline[4])} transition-colors duration-300 shadow-sm`} strokeWidth="1" fill="currentColor" fillOpacity="0.2"/>
+                        <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">{getInstrText(pipeline[4])}</text>
+                    </g>
+
+                    {/* 5. 冲刷信号线 */}
+                    {flushedIndices.length > 0 && (
+                        <g stroke="#EF4444" strokeWidth="2" fill="none" strokeDasharray="4,4" filter="url(#flush-glow)" className="animate-in fade-in zoom-in">
+                            <path d={`M${strategy==="early"?300:500} 100 L${strategy==="early"?300:500} 260`} />
+                            {strategy === "standard" && <path d="M500 260 L300 260" markerEnd="url(#arrow-gray)" />} 
+                            <path d={`M${strategy==="early"?300:300} 260 L100 260`} markerEnd="url(#arrow-gray)" /> 
+                            <circle cx={strategy==="early"?300:500} cy="100" r="4" fill="#EF4444" stroke="none" className="animate-ping"/>
+                        </g>
+                    )}
+                </svg>
+            </div>
+
+            {/* Controls & Explain */}
+            <div className="flex gap-6">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm w-1/3 flex flex-col justify-between">
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-3">仿真控制</div>
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-xs font-bold text-slate-600">分支结果:</span>
+                            <div className="flex bg-slate-100 p-1 rounded">
+                                <button onClick={()=>setBranchTaken(true)} className={`px-2 py-1 text-xs rounded ${branchTaken?"bg-white shadow text-amber-600 font-bold":"text-slate-400"}`}>Taken</button>
+                                <button onClick={()=>setBranchTaken(false)} className={`px-2 py-1 text-xs rounded ${!branchTaken?"bg-white shadow text-slate-600 font-bold":"text-slate-400"}`}>Not Taken</button>
+                            </div>
+                        </div>
+                        <div className="text-3xl font-mono font-bold text-blue-600 mb-1">Cycle {cycle}</div>
+                        <div className="text-xs text-slate-500">
+                            {flushedIndices.length > 0 ? "⚠️ Hazard Detected! Flushing..." : "✅ Pipeline Stalled/Running"}
+                        </div>
+                    </div>
+                    <button onClick={() => { if(cycle>=8) reset(); setIsPlaying(!isPlaying); }} className={`w-full py-3 flex items-center justify-center gap-2 rounded-lg font-bold transition-all shadow-md ${isPlaying ? "bg-amber-100 text-amber-700" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+                        {isPlaying ? <Pause className="w-4 h-4 fill-current"/> : <Play className="w-4 h-4 fill-current"/>}
+                        {isPlaying ? "暂停" : cycle>=8 ? "重置" : "开始仿真"}
+                    </button>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-1">
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2">
+                        <Activity className="w-4 h-4"/> 性能损耗分析 (Penalty Analysis)
+                    </div>
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="bg-slate-50 p-3 rounded border border-slate-100">
+                            <div className="text-xs text-slate-400 mb-1">当前策略</div>
+                            <div className={`font-bold ${strategy==="early"?"text-emerald-600":"text-blue-600"}`}>
+                                {strategy === "standard" ? "EX 阶段判断 (默认)" : "ID 阶段判断 (优化)"}
+                            </div>
+                        </div>
+                        <div className="bg-slate-50 p-3 rounded border border-slate-100">
+                            <div className="text-xs text-slate-400 mb-1">冲刷代价 (Penalty)</div>
+                            <div className="font-bold text-slate-800 text-lg">
+                                {strategy === "standard" ? "2 Cycles" : "1 Cycle"}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-4 text-xs text-slate-500 leading-relaxed p-3 bg-blue-50/50 rounded border border-blue-100 text-blue-800">
+                        {strategy === "standard" 
+                            ? "标准模式：在 EX 段才算出分支结果。此时，后续 2 条指令（ID段和IF段）已经错误地进入流水线，必须全部冲刷 (Flush)。"
+                            : "优化模式：在 ID 段增加比较器，提前判断分支。一旦预测失败，只需冲刷 1 条指令（IF段），大大减少了流水线停顿时间。"}
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
+
 // Ch6. Pipeline Calc
 const PipelineCalc = () => {
   const [k, setK] = useState(5); // stages
@@ -4095,6 +4443,364 @@ const VirtualMemoryViz = () => {
         </ToolCard>
     );
 };
+
+// --- 组件开始：Ch7 存储器层次结构可视化 (MemoryHierarchyViz) - 修复交互版 ---
+const MemoryHierarchyViz = () => {
+  const [vaInput, setVaInput] = useState("067A");
+  const [tlbHit, setTlbHit] = useState(true);
+  const [cacheHit, setCacheHit] = useState(true);
+  const [phase, setPhase] = useState(0); 
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // --- 1. 地址计算逻辑 ---
+  const vpn = vaInput.length >= 1 ? vaInput[0] : "0";
+  const offset = vaInput.length >= 3 ? vaInput.slice(1) : "000";
+  const ppn = (parseInt(vpn, 16) + 1).toString(16).toUpperCase(); 
+  const pa = ppn + offset;
+  
+  const paTag = pa.slice(0, 2);
+  const paIndex = pa.slice(2, 3);
+  const paOffset = pa.slice(3, 4);
+
+  // --- 2. 动态生成步骤 ---
+  const currentSteps = useMemo(() => {
+    const s = [
+        { id: 0, text: "CPU 发出虚拟地址 (VA)", active: ["cpu_va"] },
+        { id: 1, text: "VA 拆分: VPN | Offset", active: ["va_split"] },
+        { id: 2, text: "查询 TLB (快表)", active: ["tlb_check"] },
+    ];
+    
+    if (tlbHit) {
+        s.push({ id: 3, text: "✅ TLB 命中: 获得 PPN", active: ["tlb_hit_path"] });
+    } else {
+        s.push({ id: 3, text: "❌ TLB 缺失: 查页表", active: ["tlb_miss_path"] });
+        s.push({ id: 4, text: "页表响应: 获得 PPN", active: ["pt_return_path"] });
+    }
+
+    s.push({ id: 5, text: "合成物理地址 (PA)", active: ["pa_form"] });
+    s.push({ id: 6, text: "PA 拆分: Tag | Index | Offset", active: ["pa_split"] });
+    s.push({ id: 7, text: "查询 Cache", active: ["cache_check"] });
+
+    if (cacheHit) {
+        s.push({ id: 8, text: "✅ Cache 命中: 返回数据", active: ["cache_hit_path"] });
+    } else {
+        s.push({ id: 8, text: "❌ Cache 缺失: 查主存", active: ["cache_miss_path"] });
+        s.push({ id: 9, text: "主存响应: 填充 Cache & 返回", active: ["mem_return_path"] });
+    }
+    s.push({ id: 10, text: "访问完成", active: [] });
+    return s;
+  }, [tlbHit, cacheHit, vaInput]);
+
+  // --- 3. 动画控制 ---
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setPhase(p => {
+          if (p >= currentSteps.length - 1) { setIsPlaying(false); return p; }
+          return p + 1;
+        });
+      }, 1500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying, currentSteps]);
+
+  const reset = () => { setIsPlaying(false); setPhase(0); };
+  
+  // 打开浮窗时自动播放
+  const openModal = () => { 
+      setIsModalOpen(true); 
+      setPhase(0); 
+      setIsPlaying(true); 
+  };
+
+  // 辅助判断是否高亮
+  const isActive = (key: string) => currentSteps[phase]?.active.includes(key);
+
+  // --- 4. 简约卡片 ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-indigo-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <Database className="w-4 h-4 text-indigo-600" />
+          访存流程 (TLB/Cache)
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-indigo-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {/* 控制开关 */}
+        <div className="flex gap-2">
+            <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded border cursor-pointer text-xs font-bold transition-all ${tlbHit ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                <input type="checkbox" checked={tlbHit} onChange={e => { setTlbHit(e.target.checked); reset(); }} className="accent-emerald-600"/>
+                {tlbHit ? "TLB 命中" : "TLB 缺失"}
+            </label>
+            <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded border cursor-pointer text-xs font-bold transition-all ${cacheHit ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                <input type="checkbox" checked={cacheHit} onChange={e => { setCacheHit(e.target.checked); reset(); }} className="accent-emerald-600"/>
+                {cacheHit ? "Cache 命中" : "Cache 缺失"}
+            </label>
+        </div>
+
+        {/* 状态预览 */}
+        <div className="bg-slate-50 rounded p-3 border border-slate-100 relative overflow-hidden">
+            <div className="flex justify-between items-center text-xs mb-2">
+                <span className="font-bold text-slate-500">Status</span>
+                <span className="font-mono text-indigo-600">{phase}/{currentSteps.length-1}</span>
+            </div>
+            <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-500 transition-all duration-300" style={{width: `${(phase / (currentSteps.length-1)) * 100}%`}}></div>
+            </div>
+        </div>
+
+        <button onClick={openModal} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded-lg flex items-center justify-center gap-2 transition-all shadow-md font-bold">
+          <Play className="w-3 h-3 fill-current" /> 打开全景演示
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 5. 详细浮窗 ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-100 rounded-lg"><Database className="w-6 h-6 text-indigo-600"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">存储器层次结构 (Memory Hierarchy)</h3>
+                    <div className="text-xs text-slate-500 font-medium">全流程图解：VA -&gt; TLB -&gt; PageTable -&gt; Cache -&gt; Memory</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+                {/* 场景设置 */}
+                <div className="flex gap-3 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors select-none">
+                        <input type="checkbox" checked={tlbHit} onChange={e => { setTlbHit(e.target.checked); reset(); }} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"/>
+                        TLB Hit
+                    </label>
+                    <div className="w-px bg-slate-200 my-1"></div>
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors select-none">
+                        <input type="checkbox" checked={cacheHit} onChange={e => { setCacheHit(e.target.checked); reset(); }} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"/>
+                        Cache Hit
+                    </label>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+            </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 flex flex-col gap-6">
+            
+            {/* Viz Container */}
+            <div className="relative w-full aspect-[2/1] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden select-none ring-4 ring-slate-50">
+                
+                {/* 地址输入浮层 */}
+                <div className="absolute top-5 left-5 z-10 bg-white/95 backdrop-blur border border-slate-200 px-4 py-2 rounded-xl shadow-sm flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Input VA:</span>
+                    <input 
+                        value={vaInput}
+                        onChange={(e) => {
+                            const v = e.target.value.toUpperCase().replace(/[^0-9A-F]/g, '').slice(0, 4);
+                            setVaInput(v);
+                            reset();
+                        }}
+                        className="w-16 font-mono font-bold text-indigo-600 bg-indigo-50 border-b-2 border-indigo-200 text-center outline-none focus:border-indigo-500 transition-colors"
+                    />
+                </div>
+
+                <svg viewBox="0 0 1000 500" className="w-full h-full">
+                    <defs>
+                        <marker id="arrow-blue" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <path d="M0,0 L6,3 L0,6" fill="#4F46E5" />
+                        </marker>
+                        <marker id="arrow-green" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <path d="M0,0 L6,3 L0,6" fill="#10B981" />
+                        </marker>
+                        <marker id="arrow-red" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <path d="M0,0 L6,3 L0,6" fill="#EF4444" />
+                        </marker>
+                    </defs>
+
+                    {/* === 布局区域 === */}
+                    
+                    {/* 1. CPU / VA */}
+                    <g transform="translate(50, 200)">
+                        <rect x="0" y="0" width="80" height="60" rx="4" fill="#F8FAFC" stroke="#94A3B8" strokeWidth="2"/>
+                        <text x="40" y="35" textAnchor="middle" fontWeight="bold" fill="#475569">CPU</text>
+                        {/* VA Box */}
+                        <g transform="translate(100, 15)">
+                            <rect x="0" y="0" width="100" height="30" fill="white" stroke={isActive("va_split") ? "#4F46E5" : "#CBD5E1"} strokeWidth="2"/>
+                            <line x1="40" y1="0" x2="40" y2="30" stroke="#CBD5E1"/>
+                            <text x="20" y="20" textAnchor="middle" fontSize="10" fill="#4F46E5">{vpn}</text>
+                            <text x="70" y="20" textAnchor="middle" fontSize="10" fill="#64748B">{offset}</text>
+                            <text x="20" y="-5" textAnchor="middle" fontSize="8" fill="#94A3B8">VPN</text>
+                            <text x="70" y="-5" textAnchor="middle" fontSize="8" fill="#94A3B8">Offset</text>
+                        </g>
+                    </g>
+
+                    {/* 2. TLB */}
+                    <g transform="translate(300, 50)">
+                        <rect x="0" y="0" width="120" height="100" rx="4" fill="#EFF6FF" stroke="#4F46E5" strokeWidth="2"/>
+                        <text x="60" y="-10" textAnchor="middle" fontWeight="bold" fill="#4F46E5">TLB (快表)</text>
+                        <g transform="translate(10, 20)" fontSize="10" fontFamily="monospace">
+                            <text x="0" y="0" fill="#94A3B8">Tag | PPN | V</text>
+                            <line x1="0" y1="5" x2="100" y2="5" stroke="#E2E8F0"/>
+                            <rect x="-5" y="10" width="110" height="15" fill={tlbHit && isActive("tlb_check") ? "#D1FAE5" : "transparent"} />
+                            <text x="5" y="22" fill="#1E293B">{vpn} | {ppn} | 1</text>
+                            <text x="5" y="40" fill="#94A3B8">Others...</text>
+                        </g>
+                    </g>
+
+                    {/* 3. Page Table */}
+                    <g transform="translate(300, 300)">
+                        <rect x="0" y="0" width="120" height="120" rx="4" fill="#FFF7ED" stroke="#F97316" strokeWidth="2"/>
+                        <text x="60" y="135" textAnchor="middle" fontWeight="bold" fill="#F97316">Page Table (页表)</text>
+                        <g transform="translate(10, 20)" fontSize="10" fontFamily="monospace">
+                            <text x="0" y="0" fill="#94A3B8">VPN | PPN | V</text>
+                            <line x1="0" y1="5" x2="100" y2="5" stroke="#E2E8F0"/>
+                            <rect x="-5" y="10" width="110" height="15" fill={!tlbHit && isActive("pt_return_path") ? "#D1FAE5" : "transparent"} />
+                            <text x="5" y="22" fill="#1E293B">{vpn} | {ppn} | 1</text>
+                            <text x="5" y="40" fill="#94A3B8">...</text>
+                        </g>
+                    </g>
+
+                    {/* 4. PA */}
+                    <g transform="translate(500, 215)">
+                        <text x="50" y="-10" textAnchor="middle" fontWeight="bold" fill="#475569">PA (物理地址)</text>
+                        <rect x="0" y="0" width="120" height="30" fill="white" stroke={isActive("pa_form") ? "#4F46E5" : "#CBD5E1"} strokeWidth="2"/>
+                        <line x1="30" y1="0" x2="30" y2="30" stroke="#CBD5E1"/>
+                        <line x1="80" y1="0" x2="80" y2="30" stroke="#CBD5E1"/>
+                        
+                        <text x="15" y="20" textAnchor="middle" fontSize="10" fill="#4F46E5">{paTag}</text>
+                        <text x="55" y="20" textAnchor="middle" fontSize="10" fill="#F59E0B">{paIndex}</text>
+                        <text x="100" y="20" textAnchor="middle" fontSize="10" fill="#64748B">{paOffset}</text>
+                        
+                        <text x="15" y="42" textAnchor="middle" fontSize="8" fill="#94A3B8">Tag</text>
+                        <text x="55" y="42" textAnchor="middle" fontSize="8" fill="#94A3B8">Index</text>
+                        <text x="100" y="42" textAnchor="middle" fontSize="8" fill="#94A3B8">Offset</text>
+                    </g>
+
+                    {/* 5. Cache */}
+                    <g transform="translate(700, 50)">
+                        <rect x="0" y="0" width="140" height="140" rx="4" fill="#F0FDF4" stroke="#10B981" strokeWidth="2"/>
+                        <text x="70" y="-10" textAnchor="middle" fontWeight="bold" fill="#10B981">Cache (L1)</text>
+                        <g transform="translate(10, 20)" fontSize="10" fontFamily="monospace">
+                            <text x="0" y="0" fill="#94A3B8">Idx | V | Tag | Data</text>
+                            <line x1="0" y1="5" x2="120" y2="5" stroke="#E2E8F0"/>
+                            <text x="0" y="20" fill="#94A3B8">...</text>
+                            <rect x="-5" y="30" width="130" height="15" fill={cacheHit && isActive("cache_check") ? "#D1FAE5" : "transparent"} />
+                            <text x="0" y="40" fill="#1E293B"> {paIndex}  | 1 | {paTag}  | [Data]</text>
+                            <text x="0" y="60" fill="#94A3B8">...</text>
+                        </g>
+                    </g>
+
+                    {/* 6. Main Memory */}
+                    <g transform="translate(700, 300)">
+                        <rect x="0" y="0" width="140" height="80" rx="4" fill="#F1F5F9" stroke="#64748B" strokeWidth="2"/>
+                        <text x="70" y="95" textAnchor="middle" fontWeight="bold" fill="#64748B">Main Memory (主存)</text>
+                        <rect x="10" y="20" width="120" height="40" fill={isActive("mem_return_path") ? "#BFDBFE" : "white"} stroke="#CBD5E1"/>
+                        <text x="70" y="45" textAnchor="middle" fontSize="10" fill="#475569">Block @ {ppn}{paIndex}..</text>
+                    </g>
+
+                    {/* === 连线动画 === */}
+                    <g fill="none" strokeWidth="2">
+                        {/* CPU -> VA */}
+                        {isActive("cpu_va") && <path d="M130 230 L150 230" stroke="#4F46E5" markerEnd="url(#arrow-blue)"/>}
+                        
+                        {/* VA -> TLB */}
+                        {isActive("tlb_check") && <path d="M190 215 L190 100 L300 100" stroke="#4F46E5" markerEnd="url(#arrow-blue)"/>}
+                        
+                        {/* TLB Hit Path */}
+                        {isActive("tlb_hit_path") && <path d="M420 100 L460 100 L460 230 L500 230" stroke="#10B981" markerEnd="url(#arrow-green)" strokeDasharray="4,2"/>}
+                        
+                        {/* TLB Miss Path (VA -> PT) */}
+                        {isActive("tlb_miss_path") && <path d="M190 245 L190 360 L300 360" stroke="#EF4444" markerEnd="url(#arrow-red)"/>}
+                        
+                        {/* PT Return (PT -> PA) */}
+                        {isActive("pt_return_path") && <path d="M420 360 L460 360 L460 230 L500 230" stroke="#10B981" markerEnd="url(#arrow-green)"/>}
+                        
+                        {/* PA -> Cache */}
+                        {isActive("cache_check") && <path d="M620 230 L660 230 L660 120 L700 120" stroke="#4F46E5" markerEnd="url(#arrow-blue)"/>}
+                        
+                        {/* Cache Hit Return (Cache -> CPU) */}
+                        {isActive("cache_hit_path") && <path d="M700 80 L50 80 L50 200" stroke="#10B981" markerEnd="url(#arrow-green)" strokeDasharray="4,2"/>}
+                        
+                        {/* Cache Miss Path (Cache -> Mem) */}
+                        {isActive("cache_miss_path") && <path d="M770 190 L770 300" stroke="#EF4444" markerEnd="url(#arrow-red)"/>}
+                        
+                        {/* Memory Return (Mem -> Cache -> CPU) */}
+                        {isActive("mem_return_path") && (
+                            <>
+                                <path d="M750 300 L750 190" stroke="#10B981" markerEnd="url(#arrow-green)"/> {/* To Cache */}
+                                <path d="M700 80 L50 80 L50 200" stroke="#10B981" opacity="0.5" strokeDasharray="4,2"/> {/* To CPU */}
+                            </>
+                        )}
+                    </g>
+
+                </svg>
+            </div>
+
+            {/* 播放控制栏 (关键增加的部分！) */}
+            <div className="flex gap-4">
+                <div className="flex-1 bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex flex-col justify-between">
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-2">过程控制器</div>
+                        <div className="text-lg font-bold text-indigo-700 min-h-[30px]">{currentSteps[phase].text}</div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
+                        <button onClick={reset} className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 transition-colors" title="重置"><RotateCcw className="w-5 h-5"/></button>
+                        <button onClick={()=>{setIsPlaying(false); setPhase(p=>Math.max(0, p-1))}} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-indigo-600 transition-colors"><ArrowLeft className="w-5 h-5"/></button>
+                        
+                        <button onClick={()=>setIsPlaying(!isPlaying)} className={`flex-1 py-2 flex items-center justify-center gap-2 rounded-lg font-bold text-sm transition-all shadow-md ${isPlaying ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                            {isPlaying ? <Pause className="w-4 h-4 fill-current"/> : <Play className="w-4 h-4 fill-current"/>}
+                            {isPlaying ? "暂停" : phase >= currentSteps.length-1 ? "重播" : "播放"}
+                        </button>
+                        
+                        <button onClick={()=>{setIsPlaying(false); setPhase(p=>Math.min(currentSteps.length-1, p+1))}} className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-indigo-600 transition-colors"><ArrowRight className="w-5 h-5"/></button>
+                    </div>
+                </div>
+
+                <div className="w-1/3 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-3">地址解析详情</div>
+                    <div className="space-y-3">
+                        <div className="bg-white p-2 rounded border border-slate-100">
+                            <div className="flex justify-between text-xs mb-1"><span className="text-slate-400">虚拟地址 (VA)</span> <span className="font-mono text-slate-700">{vaInput}</span></div>
+                            <div className="flex gap-1 h-2 rounded-full overflow-hidden">
+                                <div className="w-1/3 bg-indigo-500"></div>
+                                <div className="w-2/3 bg-slate-300"></div>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>VPN: {vpn}</span><span>Offset: {offset}</span></div>
+                        </div>
+                        <div className="bg-white p-2 rounded border border-slate-100">
+                            <div className="flex justify-between text-xs mb-1"><span className="text-slate-400">物理地址 (PA)</span> <span className="font-mono text-slate-700">{pa}</span></div>
+                            <div className="flex gap-1 h-2 rounded-full overflow-hidden">
+                                <div className="w-1/4 bg-indigo-500"></div>
+                                <div className="w-1/4 bg-amber-500"></div>
+                                <div className="w-2/4 bg-slate-300"></div>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>Tag: {paTag}</span><span>Idx: {paIndex}</span><span>Off: {paOffset}</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
 
 // Ch7. Hamming Code Viz
 const HammingCodeViz = () => {
@@ -4915,7 +5621,8 @@ const App = () => {
                 <div id="tools-chapter-6" className="space-y-6 mt-12 scroll-mt-6">
                     <div className="text-xs font-bold text-slate-300 uppercase pl-1 mb-2 border-b border-slate-200 pb-1">Ch6. 流水线</div>
                     <PipelineSpaceTimeViz />
-                    <ForwardingUnitViz />
+                    <ForwardingUnitViz />、
+                    <ControlHazardViz />
                     <PipelineCalc />
                 </div>
 
@@ -4924,6 +5631,7 @@ const App = () => {
                     <CacheReplacementViz />
                     <VirtualMemoryViz />
                     <CacheCalc />
+                    <MemoryHierarchyViz />
                     <HammingCodeViz />
                 </div>
 
