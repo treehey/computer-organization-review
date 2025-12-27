@@ -3813,7 +3813,7 @@ const ForwardingUnitViz = () => {
     );
 };
 
-// --- 组件开始：Ch6 流水线控制冒险可视化 (v11.0 - Dual Mode) ---
+// --- 组件开始：Ch6 流水线控制冒险可视化 (v11.0 - 全中文版) ---
 const ControlHazardViz = () => {
   const [strategy, setStrategy] = useState<"standard" | "early">("standard"); // standard=EX检测, early=ID检测
   const [branchTaken, setBranchTaken] = useState(true);
@@ -3911,7 +3911,7 @@ const ControlHazardViz = () => {
 
   const getInstrText = (id: string | null) => {
     const instr = instructionSequence.find(i => i.id === id);
-    return instr ? instr.asm.split(' ')[0] : "nop";
+    return instr ? instr.asm.split(' ')[0] : "气泡";
   };
 
   // --- 1. 简约卡片 (Compact Card) ---
@@ -3943,14 +3943,14 @@ const ControlHazardViz = () => {
         {/* Status Bar */}
         <div className="flex justify-between items-center text-xs bg-slate-50 p-2 rounded border border-slate-100">
             <div>
-                <span className="text-slate-400 font-bold uppercase mr-2">Cycle</span>
+                <span className="text-slate-400 font-bold uppercase mr-2">周期 (Cycle)</span>
                 <span className="text-xl font-mono font-bold text-blue-600">{cycle}</span>
             </div>
             <div>
                 {flushedIndices.length > 0 ? (
-                    <span className="text-red-500 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Hazard!</span>
+                    <span className="text-red-500 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> 冒险冲刷!</span>
                 ) : (
-                    <span className="text-emerald-500 font-bold flex items-center gap-1"><Check className="w-3 h-3"/> Normal</span>
+                    <span className="text-emerald-500 font-bold flex items-center gap-1"><Check className="w-3 h-3"/> 正常运行</span>
                 )}
             </div>
         </div>
@@ -3973,7 +3973,7 @@ const ControlHazardViz = () => {
                 <div className="p-2.5 bg-amber-100 rounded-lg"><GitBranch className="w-6 h-6 text-amber-600"/></div>
                 <div>
                     <h3 className="text-xl font-bold text-slate-900">流水线控制冒险 (Control Hazards)</h3>
-                    <div className="text-xs text-slate-500 font-medium">分支预测失败时的 Flush 机制演示</div>
+                    <div className="text-xs text-slate-500 font-medium">分支预测失败时的冲刷 (Flush) 机制演示</div>
                 </div>
             </div>
             <div className="flex items-center gap-4">
@@ -4029,20 +4029,20 @@ const ControlHazardViz = () => {
                     {/* 2. 静态硬件部件 */}
                     <g stroke="#94A3B8" strokeWidth="2" fill="white">
                         <rect x="60" y="150" width="80" height="100" rx="4" />
-                        <text x="100" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">IM</text>
+                        <text x="100" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">IM 指令存储</text>
                         <rect x="260" y="150" width="80" height="100" rx="4" />
-                        <text x="300" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">Regs</text>
+                        <text x="300" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">Regs 寄存器</text>
                         <path d="M460 140 L540 160 L540 240 L460 260 L460 210 L450 200 L460 190 Z" />
                         <text x="510" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">ALU</text>
                         <rect x="660" y="150" width="80" height="100" rx="4" />
-                        <text x="700" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">DM</text>
+                        <text x="700" y="205" textAnchor="middle" fill="#475569" stroke="none" fontSize="12">DM 数据存储</text>
                     </g>
 
                     {/* 3. 分支比较器 */}
                     <g transform={`translate(${strategy === "early" ? 280 : 480}, 80)`} className="transition-all duration-500">
                         <circle cx="20" cy="20" r="15" fill="#FEF3C7" stroke="#D97706" />
                         <text x="20" y="24" textAnchor="middle" fontSize="14" fill="#D97706" fontWeight="bold" stroke="none">=</text>
-                        <text x="20" y="-10" textAnchor="middle" fontSize="10" fill="#D97706" stroke="none">Comparator</text>
+                        <text x="20" y="-10" textAnchor="middle" fontSize="10" fill="#D97706" stroke="none">比较器</text>
                         {strategy === "early" ? (
                             <path d="M-20 70 L5 30" stroke="#F59E0B" strokeWidth="2" fill="none" markerEnd="url(#arrow-gray)"/>
                         ) : (
@@ -4062,7 +4062,7 @@ const ControlHazardViz = () => {
                                 className={`${flushedIndices.includes(1) ? "fill-red-100 stroke-red-500 text-red-500 animate-pulse" : getInstrColor(pipeline[1])} transition-all duration-300 shadow-sm`} 
                                 strokeWidth="1" fillOpacity="0.2" fill="currentColor"/>
                         <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">
-                            {flushedIndices.includes(1) ? "FLUSHED!" : getInstrText(pipeline[1])}
+                            {flushedIndices.includes(1) ? "已冲刷 (Flush)" : getInstrText(pipeline[1])}
                         </text>
                         {flushedIndices.includes(1) && <path d="M10 5 L70 25 M10 25 L70 5" stroke="#EF4444" strokeWidth="3" opacity="0.5"/>}
                     </g>
@@ -4072,7 +4072,7 @@ const ControlHazardViz = () => {
                                 className={`${flushedIndices.includes(2) ? "fill-red-100 stroke-red-500 text-red-500 animate-pulse" : getInstrColor(pipeline[2])} transition-all duration-300 shadow-sm`} 
                                 strokeWidth="1" fillOpacity="0.2" fill="currentColor"/>
                         <text x="40" y="20" textAnchor="middle" fontSize="10" className="fill-current font-mono font-bold" stroke="none">
-                            {flushedIndices.includes(2) ? "FLUSHED!" : getInstrText(pipeline[2])}
+                            {flushedIndices.includes(2) ? "已冲刷 (Flush)" : getInstrText(pipeline[2])}
                         </text>
                         {flushedIndices.includes(2) && <path d="M10 5 L70 25 M10 25 L70 5" stroke="#EF4444" strokeWidth="3" opacity="0.5"/>}
                     </g>
@@ -4107,13 +4107,13 @@ const ControlHazardViz = () => {
                         <div className="flex items-center gap-2 mb-4">
                             <span className="text-xs font-bold text-slate-600">分支结果:</span>
                             <div className="flex bg-slate-100 p-1 rounded">
-                                <button onClick={()=>setBranchTaken(true)} className={`px-2 py-1 text-xs rounded ${branchTaken?"bg-white shadow text-amber-600 font-bold":"text-slate-400"}`}>Taken</button>
-                                <button onClick={()=>setBranchTaken(false)} className={`px-2 py-1 text-xs rounded ${!branchTaken?"bg-white shadow text-slate-600 font-bold":"text-slate-400"}`}>Not Taken</button>
+                                <button onClick={()=>setBranchTaken(true)} className={`px-2 py-1 text-xs rounded ${branchTaken?"bg-white shadow text-amber-600 font-bold":"text-slate-400"}`}>跳转 (Taken)</button>
+                                <button onClick={()=>setBranchTaken(false)} className={`px-2 py-1 text-xs rounded ${!branchTaken?"bg-white shadow text-slate-600 font-bold":"text-slate-400"}`}>不跳转 (Not)</button>
                             </div>
                         </div>
                         <div className="text-3xl font-mono font-bold text-blue-600 mb-1">Cycle {cycle}</div>
                         <div className="text-xs text-slate-500">
-                            {flushedIndices.length > 0 ? "⚠️ Hazard Detected! Flushing..." : "✅ Pipeline Stalled/Running"}
+                            {flushedIndices.length > 0 ? "⚠️ 检测到冒险! 正在冲刷流水线..." : "✅ 流水线正常运行"}
                         </div>
                     </div>
                     <button onClick={() => { if(cycle>=8) reset(); setIsPlaying(!isPlaying); }} className={`w-full py-3 flex items-center justify-center gap-2 rounded-lg font-bold transition-all shadow-md ${isPlaying ? "bg-amber-100 text-amber-700" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
@@ -4130,20 +4130,587 @@ const ControlHazardViz = () => {
                         <div className="bg-slate-50 p-3 rounded border border-slate-100">
                             <div className="text-xs text-slate-400 mb-1">当前策略</div>
                             <div className={`font-bold ${strategy==="early"?"text-emerald-600":"text-blue-600"}`}>
-                                {strategy === "standard" ? "EX 阶段判断 (默认)" : "ID 阶段判断 (优化)"}
+                                {strategy === "standard" ? "标准模式 (EX段判断)" : "优化模式 (ID段判断)"}
                             </div>
                         </div>
                         <div className="bg-slate-50 p-3 rounded border border-slate-100">
                             <div className="text-xs text-slate-400 mb-1">冲刷代价 (Penalty)</div>
                             <div className="font-bold text-slate-800 text-lg">
-                                {strategy === "standard" ? "2 Cycles" : "1 Cycle"}
+                                {strategy === "standard" ? "2 个时钟周期" : "1 个时钟周期"}
                             </div>
                         </div>
                     </div>
                     <div className="mt-4 text-xs text-slate-500 leading-relaxed p-3 bg-blue-50/50 rounded border border-blue-100 text-blue-800">
                         {strategy === "standard" 
-                            ? "标准模式：在 EX 段才算出分支结果。此时，后续 2 条指令（ID段和IF段）已经错误地进入流水线，必须全部冲刷 (Flush)。"
-                            : "优化模式：在 ID 段增加比较器，提前判断分支。一旦预测失败，只需冲刷 1 条指令（IF段），大大减少了流水线停顿时间。"}
+                            ? "标准模式：在 EX 段 (执行阶段) 才计算出分支结果。此时，后续的 2 条指令（分别位于 ID段 和 IF段）已经错误地进入了流水线，必须全部被冲刷 (Flush)。"
+                            : "优化模式：在 ID 段 (译码阶段) 增加额外的比较器，提前判断分支。一旦预测失败，只需冲刷 1 条指令（位于 IF段），大大减少了流水线停顿时间。"}
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
+
+// --- 组件开始：Ch6 动态分支预测可视化 (BranchPredictionViz) ---
+const BranchPredictionViz = () => {
+  // 状态定义: 0=强不跳(SN), 1=弱不跳(WN), 2=弱跳(WT), 3=强跳(ST)
+  const [state, setState] = useState(0); // 初始设为 强不跳 (模拟冷启动)
+  const [history, setHistory] = useState<{pred: boolean, actual: boolean, correct: boolean}[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // 模拟一个循环场景：4次跳转(T)，1次不跳转(NT) - 典型的 for(i=0; i<4; i++)
+  const loopPattern = [true, true, true, true, false];
+  const [patternIdx, setPatternIdx] = useState(0);
+
+  // 状态机元数据
+  const states = [
+    { id: 0, label: "强不跳转", code: "00", color: "#EF4444", pred: false }, // Red
+    { id: 1, label: "弱不跳转", code: "01", color: "#FCA5A5", pred: false }, // Light Red
+    { id: 2, label: "弱跳转",   code: "10", color: "#86EFAC", pred: true },  // Light Green
+    { id: 3, label: "强跳转",   code: "11", color: "#22C55E", pred: true },  // Green
+  ];
+
+  // 核心逻辑：执行一次预测
+  const step = (actualTaken: boolean) => {
+    const currentState = states[state];
+    const prediction = currentState.pred;
+    const isCorrect = prediction === actualTaken;
+
+    // 更新历史
+    setHistory(prev => [...prev.slice(-4), { pred: prediction, actual: actualTaken, correct: isCorrect }]);
+
+    // 更新状态机 (2-bit 饱和计数器逻辑)
+    setState(curr => {
+      if (actualTaken) {
+        // 如果实际跳转(T)，向右移动状态 (max 3)
+        return Math.min(3, curr + 1);
+      } else {
+        // 如果实际不跳(NT)，向左移动状态 (min 0)
+        return Math.max(0, curr - 1);
+      }
+    });
+
+    // 循环模式推进
+    setPatternIdx(p => (p + 1) % loopPattern.length);
+  };
+
+  // 自动播放逻辑
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        step(loopPattern[patternIdx]);
+      }, 1500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying, patternIdx, state]); // Dependencies need to be careful here
+
+  const reset = () => {
+    setIsPlaying(false);
+    setState(0); // Reset to SN
+    setHistory([]);
+    setPatternIdx(0);
+  };
+
+  const openModal = () => {
+    setIsModalOpen(true);
+    reset();
+  };
+
+  // 计算准确率
+  const accuracy = history.length === 0 ? 0 : Math.round((history.filter(h => h.correct).length / history.length) * 100);
+
+  // --- 1. 简约卡片 ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-purple-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <Zap className="w-4 h-4 text-purple-600" />
+          动态分支预测
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-purple-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {/* 当前状态展示 */}
+        <div className="flex items-center justify-between bg-slate-50 p-3 rounded border border-slate-100">
+            <div className="flex flex-col">
+                <span className="text-[10px] text-slate-400 uppercase font-bold">当前状态</span>
+                <span className="font-bold text-slate-700">{states[state].label}</span>
+            </div>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-mono font-bold text-white shadow-sm transition-all duration-500`} style={{backgroundColor: states[state].color}}>
+                {states[state].code}
+            </div>
+        </div>
+
+        {/* 预测行为 */}
+        <div className="flex gap-2">
+            <div className={`flex-1 py-2 text-center text-xs rounded border transition-colors ${states[state].pred ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-slate-50 border-slate-200 text-slate-400 opacity-50"}`}>
+                预测: 跳转 (T)
+            </div>
+            <div className={`flex-1 py-2 text-center text-xs rounded border transition-colors ${!states[state].pred ? "bg-red-50 border-red-200 text-red-700" : "bg-slate-50 border-slate-200 text-slate-400 opacity-50"}`}>
+                预测: 不跳 (NT)
+            </div>
+        </div>
+
+        <button onClick={openModal} className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg flex items-center justify-center gap-2 transition-all shadow-md font-bold">
+          <Play className="w-3 h-3 fill-current" /> 打开状态机演示
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 2. 详细浮窗 ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-100 rounded-lg"><Zap className="w-6 h-6 text-purple-600"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">动态分支预测 (2-bit Predictor)</h3>
+                    <div className="text-xs text-slate-500 font-medium">利用 2位饱和计数器 预测分支跳转方向</div>
+                </div>
+            </div>
+            <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+        </div>
+
+        {/* Content Grid */}
+        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+            
+            {/* Left: State Machine Viz */}
+            <div className="lg:col-span-2 bg-slate-50/50 p-8 flex flex-col items-center justify-center relative overflow-hidden">
+                {/* Background Grid */}
+                <div className="absolute inset-0" style={{backgroundImage: 'radial-gradient(#CBD5E1 1px, transparent 1px)', backgroundSize: '20px 20px', opacity: 0.3}}></div>
+
+                {/* State Machine SVG */}
+                <svg viewBox="0 0 600 300" className="w-full max-w-2xl drop-shadow-xl relative z-10">
+                    <defs>
+                        <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <path d="M0,0 L6,3 L0,6" fill="#94A3B8" />
+                        </marker>
+                    </defs>
+
+                    {/* Transitions Lines (Curved) */}
+                    {/* 0 -> 1 (T) */}
+                    <path d="M100 130 Q150 80 200 130" fill="none" stroke={state===0 && isPlaying ? "#22C55E" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+                    {/* 1 -> 0 (NT) */}
+                    <path d="M200 170 Q150 220 100 170" fill="none" stroke={state===1 && isPlaying ? "#EF4444" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+                    
+                    {/* 1 -> 2 (T) */}
+                    <path d="M250 130 Q300 80 350 130" fill="none" stroke={state===1 && isPlaying ? "#22C55E" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+                    {/* 2 -> 1 (NT) */}
+                    <path d="M350 170 Q300 220 250 170" fill="none" stroke={state===2 && isPlaying ? "#EF4444" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+
+                    {/* 2 -> 3 (T) */}
+                    <path d="M400 130 Q450 80 500 130" fill="none" stroke={state===2 && isPlaying ? "#22C55E" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+                    {/* 3 -> 2 (NT) */}
+                    <path d="M500 170 Q450 220 400 170" fill="none" stroke={state===3 && isPlaying ? "#EF4444" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+
+                    {/* Self Loops (Saturation) */}
+                    {/* 0 -> 0 (NT) */}
+                    <path d="M70 130 Q30 80 50 150" fill="none" stroke={state===0 && isPlaying ? "#EF4444" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+                    {/* 3 -> 3 (T) */}
+                    <path d="M530 130 Q570 80 550 150" fill="none" stroke={state===3 && isPlaying ? "#22C55E" : "#E2E8F0"} strokeWidth="4" markerEnd="url(#arrow)" />
+
+                    {/* State Nodes */}
+                    {states.map((s, i) => (
+                        <g key={s.id} transform={`translate(${75 + i * 150}, 150)`} className="transition-all duration-500">
+                            {/* Outer Glow for Active State */}
+                            <circle r="40" fill={state === i ? s.color : "white"} fillOpacity={state===i ? 0.2 : 1} className="transition-all duration-300" />
+                            <circle r="30" fill={s.color} className={`transition-all duration-300 ${state === i ? 'scale-110 shadow-lg' : 'opacity-50 grayscale'}`} />
+                            
+                            <text y="5" textAnchor="middle" fill="white" fontWeight="bold" fontSize="14">{s.code}</text>
+                            <text y="50" textAnchor="middle" fill={state === i ? "#1E293B" : "#94A3B8"} fontWeight="bold" fontSize="12">{s.label}</text>
+                            <text y="65" textAnchor="middle" fill={state === i ? (s.pred ? "#16A34A" : "#DC2626") : "transparent"} fontSize="10" fontWeight="bold">
+                                预测: {s.pred ? "T" : "NT"}
+                            </text>
+                        </g>
+                    ))}
+                </svg>
+
+                <div className="absolute bottom-6 flex gap-4 text-xs font-bold text-slate-400 bg-white/80 px-4 py-2 rounded-full border border-slate-200">
+                    <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> 绿色线: 实际跳转 (T)</span>
+                    <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> 红色线: 实际不跳 (NT)</span>
+                </div>
+            </div>
+
+            {/* Right: Controls & Log */}
+            <div className="flex flex-col h-full bg-white">
+                <div className="p-6 border-b border-slate-100">
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-4">场景控制</div>
+                    
+                    {/* Accuracy Meter */}
+                    <div className="bg-slate-50 rounded-lg p-4 mb-6 border border-slate-100 flex items-center justify-between">
+                        <div>
+                            <div className="text-xs text-slate-400 mb-1">预测准确率</div>
+                            <div className="text-2xl font-mono font-bold text-slate-800">{accuracy}%</div>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-xs text-slate-400 mb-1">样本数</div>
+                            <div className="text-sm font-mono font-bold text-slate-600">{history.length}</div>
+                        </div>
+                    </div>
+
+                    {/* Manual Controls */}
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <button onClick={() => step(true)} className="py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg border border-emerald-200 font-bold transition-colors flex flex-col items-center">
+                            <span className="text-xs uppercase opacity-70">Next Actual</span>
+                            <span className="text-lg">跳转 (T)</span>
+                        </button>
+                        <button onClick={() => step(false)} className="py-3 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg border border-red-200 font-bold transition-colors flex flex-col items-center">
+                            <span className="text-xs uppercase opacity-70">Next Actual</span>
+                            <span className="text-lg">不跳 (NT)</span>
+                        </button>
+                    </div>
+
+                    {/* Auto Play */}
+                    <button onClick={() => setIsPlaying(!isPlaying)} className={`w-full py-2 flex items-center justify-center gap-2 rounded-lg font-bold text-sm transition-all ${isPlaying ? 'bg-purple-100 text-purple-700' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
+                        {isPlaying ? <Pause className="w-4 h-4"/> : <RefreshCw className="w-4 h-4"/>}
+                        {isPlaying ? "暂停自动循环" : "自动演示循环 (Loop)"}
+                    </button>
+                    <div className="mt-2 text-[10px] text-slate-400 text-center">
+                        当前模式: {loopPattern[patternIdx] ? "跳转 (T)" : "不跳 (NT)"} (idx: {patternIdx})
+                    </div>
+                </div>
+
+                {/* History Log */}
+                <div className="flex-1 overflow-y-auto p-0">
+                    <div className="sticky top-0 bg-slate-50 px-6 py-2 text-xs font-bold text-slate-500 border-b border-slate-100 flex justify-between">
+                        <span>历史记录</span>
+                        <span>最新在下 ↓</span>
+                    </div>
+                    <div className="divide-y divide-slate-50">
+                        {history.length === 0 && <div className="p-6 text-center text-xs text-slate-400">暂无记录，请点击按钮开始...</div>}
+                        {history.map((h, i) => (
+                            <div key={i} className="px-6 py-3 flex items-center justify-between text-sm animate-in slide-in-from-right-2 duration-300">
+                                <div className="flex items-center gap-3">
+                                    <span className="font-mono text-slate-300 text-xs">#{i+1}</span>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs text-slate-400">预测</span>
+                                        <span className={`font-bold ${h.pred ? "text-emerald-600" : "text-red-600"}`}>{h.pred ? "T" : "NT"}</span>
+                                    </div>
+                                    <ArrowRight className="w-3 h-3 text-slate-300" />
+                                    <div className="flex flex-col">
+                                        <span className="text-xs text-slate-400">实际</span>
+                                        <span className={`font-bold ${h.actual ? "text-emerald-600" : "text-red-600"}`}>{h.actual ? "T" : "NT"}</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    {h.correct ? (
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold flex items-center gap-1"><Check className="w-3 h-3"/> 准确</span>
+                                    ) : (
+                                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold flex items-center gap-1"><X className="w-3 h-3"/> 错误</span>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {/* Dummy div to scroll to bottom could be added here */}
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
+};
+// --- 组件结束 ---
+
+// --- 组件开始：Ch6 延迟分支可视化 (v2.0 - SVG 像素对齐版) ---
+const DelayedBranchingViz = () => {
+  const [branchTaken, setBranchTaken] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [cycle, setCycle] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // 指令序列
+  const instructionSequence = [
+    { id: "add", asm: "add $t1,$t2,$t3", type: "normal", desc: "前序指令" },
+    { id: "beq", asm: "beq $t1,$0,Target", type: "branch", desc: "分支指令" },
+    { id: "sub", asm: "sub $s1,$s2,$s3", type: "delay_slot", desc: "延迟槽 (必执行)" },
+    { id: "and", asm: "and $t4,$t5,$t6", type: "fallthrough", desc: "顺序后继 (Not Taken)" },
+    { id: "target", asm: "Target: or $t7,$t8", type: "target", desc: "跳转目标 (Taken)" },
+  ];
+
+  const reset = () => {
+    setIsPlaying(false);
+    setCycle(0);
+  };
+
+  const openModal = () => {
+    setIsModalOpen(true);
+    reset();
+  };
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setCycle(c => {
+          if (c >= 8) { setIsPlaying(false); return c; }
+          return c + 1;
+        });
+      }, 1500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying]);
+
+  // SVG 绘图参数
+  const GRID_W = 60;  // 每一列(周期)宽度
+  const GRID_H = 50;  // 每一行(指令)高度
+  const LABEL_W = 140; // 左侧指令标签宽度
+  const TOTAL_H = instructionSequence.length * GRID_H + 40; // 总高度
+  const TOTAL_W = LABEL_W + 9 * GRID_W; // 总宽度 (支持到 Cycle 9)
+
+  // 渲染辅助
+  const getStageColor = (type: string, isDelaySlot: boolean) => {
+    if (isDelaySlot) return { fill: "#FAF5FF", stroke: "#A855F7", text: "#7E22CE" }; // Purple
+    if (type === "branch") return { fill: "#FFFBEB", stroke: "#F59E0B", text: "#B45309" }; // Amber
+    if (type === "target") return { fill: "#ECFDF5", stroke: "#10B981", text: "#047857" }; // Emerald
+    if (type === "fallthrough") return { fill: "#EFF6FF", stroke: "#3B82F6", text: "#1D4ED8" }; // Blue
+    return { fill: "#F8FAFC", stroke: "#94A3B8", text: "#475569" }; // Slate
+  };
+
+  // --- 1. 简约卡片 ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-purple-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-purple-600" />
+          延迟分支技术
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-purple-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+
+      <div className="space-y-4">
+        {/* 迷你预览：只显示延迟槽那一行 */}
+        <div className="bg-slate-50 rounded border border-slate-100 p-3 flex flex-col gap-2">
+            <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-500">延迟槽指令状态</span>
+                <span className="font-mono text-purple-600 font-bold">{cycle >= 3 ? "执行中" : "等待"}</span>
+            </div>
+            <div className="flex gap-1">
+                {["IF","ID","EX","MEM","WB"].map((stage, idx) => (
+                    <div key={stage} className={`flex-1 h-8 rounded flex items-center justify-center text-[10px] font-bold border transition-all duration-300 ${
+                        cycle >= 3 + idx 
+                        ? "bg-purple-100 border-purple-300 text-purple-700" 
+                        : "bg-slate-100 border-slate-200 text-slate-300"
+                    }`}>
+                        {stage}
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        <button onClick={openModal} className="w-full py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs rounded-lg flex items-center justify-center gap-2 transition-all border border-purple-200 font-bold">
+          <Play className="w-3 h-3 fill-current" /> 演示零冲刷流程
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 2. 详细浮窗 ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-100 rounded-lg"><Clock className="w-6 h-6 text-purple-600"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">延迟分支 (Delayed Branching)</h3>
+                    <div className="text-xs text-slate-500 font-medium">利用编译器填充延迟槽，消除控制冒险气泡</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+                <div className="flex bg-slate-100 p-1 rounded-lg items-center px-3 gap-2">
+                    <span className="text-xs font-bold text-slate-500">分支方向:</span>
+                    <button onClick={()=>{setBranchTaken(true); reset();}} className={`px-3 py-1 text-xs rounded font-bold transition-all ${branchTaken ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"}`}>
+                        跳转 (Taken)
+                    </button>
+                    <button onClick={()=>{setBranchTaken(false); reset();}} className={`px-3 py-1 text-xs rounded font-bold transition-all ${!branchTaken ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>
+                        不跳 (Not)
+                    </button>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+            </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 flex flex-col gap-6">
+            
+            {/* Viz Container */}
+            <div className="relative w-full aspect-[2.2/1] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden select-none ring-4 ring-slate-50">
+                
+                {/* SVG 核心绘制区域 */}
+                <svg viewBox={`0 0 ${TOTAL_W} ${TOTAL_H}`} className="w-full h-full">
+                    <defs>
+                        <pattern id="grid" width={GRID_W} height={GRID_H} patternUnits="userSpaceOnUse">
+                            <path d={`M ${GRID_W} 0 L 0 0 0 ${GRID_H}`} fill="none" stroke="#F1F5F9" strokeWidth="1"/>
+                        </pattern>
+                    </defs>
+
+                    {/* 1. 背景网格 */}
+                    <rect x={LABEL_W} y="30" width={TOTAL_W - LABEL_W} height={TOTAL_H - 30} fill="url(#grid)" />
+                    
+                    {/* 2. 周期表头 (CC1, CC2...) */}
+                    <g transform={`translate(${LABEL_W}, 20)`}>
+                        {[1,2,3,4,5,6,7,8].map((c, i) => (
+                            <text key={c} x={i * GRID_W + GRID_W/2} y="0" textAnchor="middle" fontSize="12" fontWeight="bold" fill={cycle===c ? "#9333EA" : "#94A3B8"}>
+                                CC {c}
+                            </text>
+                        ))}
+                    </g>
+
+                    {/* 3. 指令行绘制 */}
+                    {instructionSequence.map((instr, rowIdx) => {
+                        // 过滤逻辑：如果不跳转，隐藏 Target；如果跳转，隐藏 Fallthrough
+                        let isVisible = true;
+                        if (branchTaken && instr.type === "fallthrough") isVisible = false;
+                        if (!branchTaken && instr.type === "target") isVisible = false;
+                        
+                        // 计算该指令的起始周期 (Start Cycle)
+                        // add (row 0) -> start 1
+                        // beq (row 1) -> start 2
+                        // sub (row 2) -> start 3 (Delay Slot)
+                        // next (row 3/4) -> start 4 (无论跳不跳，都在 DS 后面取指)
+                        let startCycle = rowIdx + 1;
+                        // 特殊修正：如果是 Target 或 Fallthrough，实际上是第4条被取出的指令
+                        // 但在数组里它们分别是 index 3 和 4。
+                        // 为了视觉正确，我们需要手动调整它们的起始周期为 4
+                        if (instr.type === "target" || instr.type === "fallthrough") {
+                            startCycle = 4;
+                        }
+
+                        if (!isVisible) return null;
+
+                        // 绘制行
+                        const y = 40 + rowIdx * GRID_H;
+                        
+                        return (
+                            <g key={instr.id} className="animate-in fade-in slide-in-from-left-4 duration-500">
+                                {/* 左侧标签 */}
+                                <g transform={`translate(0, ${y})`}>
+                                    <text x="10" y="20" fontSize="12" fontWeight="bold" fill="#334155" fontFamily="monospace">
+                                        {instr.asm.split(' ')[0]}
+                                    </text>
+                                    <text x="10" y="35" fontSize="9" fill="#94A3B8">{instr.desc}</text>
+                                    {instr.type === "delay_slot" && (
+                                        <rect x="0" y="5" width="4" height="35" fill="#A855F7" rx="2" />
+                                    )}
+                                </g>
+
+                                {/* 流水线方块 */}
+                                {["IF", "ID", "EX", "MEM", "WB"].map((stage, stageIdx) => {
+                                    const currentStageCycle = startCycle + stageIdx;
+                                    const x = LABEL_W + (currentStageCycle - 1) * GRID_W;
+                                    
+                                    // 只有当当前总周期 >= 该阶段应发生的周期时才显示
+                                    if (cycle < currentStageCycle) return null;
+
+                                    const colors = getStageColor(instr.type, instr.type === "delay_slot");
+                                    
+                                    return (
+                                        <g key={stage} transform={`translate(${x}, ${y})`}>
+                                            <rect 
+                                                x="2" y="5" 
+                                                width={GRID_W - 4} height={GRID_H - 10} 
+                                                rx="4"
+                                                fill={colors.fill} 
+                                                stroke={colors.stroke}
+                                                strokeWidth={cycle === currentStageCycle ? 2 : 1}
+                                                className="transition-all duration-300"
+                                            />
+                                            <text 
+                                                x={GRID_W/2} y={GRID_H/2 + 5} 
+                                                textAnchor="middle" 
+                                                fontSize="10" 
+                                                fontWeight="bold" 
+                                                fill={colors.text}
+                                            >
+                                                {stage}
+                                            </text>
+                                        </g>
+                                    );
+                                })}
+                            </g>
+                        );
+                    })}
+
+                    {/* 4. 周期高亮游标 */}
+                    {cycle > 0 && (
+                        <rect 
+                            x={LABEL_W + (cycle-1) * GRID_W} 
+                            y="30" 
+                            width={GRID_W} 
+                            height={TOTAL_H - 30} 
+                            fill="#9333EA" 
+                            fillOpacity="0.05" 
+                            pointerEvents="none"
+                            className="transition-all duration-300"
+                        />
+                    )}
+                </svg>
+            </div>
+
+            {/* Controls */}
+            <div className="flex gap-6">
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm w-1/3 flex flex-col justify-between">
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 uppercase mb-3">控制面板</div>
+                        <div className="text-3xl font-mono font-bold text-purple-600 mb-1">Cycle {cycle}</div>
+                        <div className="text-xs text-slate-500 mb-4 h-10">
+                            {cycle === 0 && "准备就绪。点击开始演示延迟分支机制。"}
+                            {cycle > 0 && cycle < 3 && "正常取指执行..."}
+                            {cycle === 3 && <span className="text-purple-600 font-bold">正在执行延迟槽指令！无论分支结果如何，它都不会被冲刷。</span>}
+                            {cycle >= 4 && (branchTaken ? "分支选中，跳转到 Target。" : "分支未选中，继续顺序执行。")}
+                        </div>
+                    </div>
+                    <button onClick={() => { if(cycle>=8) reset(); setIsPlaying(!isPlaying); }} className={`w-full py-3 flex items-center justify-center gap-2 rounded-lg font-bold transition-all shadow-md ${isPlaying ? "bg-amber-100 text-amber-700" : "bg-purple-600 text-white hover:bg-purple-700"}`}>
+                        {isPlaying ? <Pause className="w-4 h-4 fill-current"/> : <Play className="w-4 h-4 fill-current"/>}
+                        {isPlaying ? "暂停" : cycle>=8 ? "重置" : "开始演示"}
+                    </button>
+                </div>
+
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-1">
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2">
+                        <Activity className="w-4 h-4"/> 机制解析 (Mechanism)
+                    </div>
+                    <div className="flex gap-4">
+                        <div className="flex-1 bg-purple-50 p-4 rounded border border-purple-100">
+                            <div className="font-bold text-purple-800 text-sm mb-2">什么是延迟槽？</div>
+                            <p className="text-xs text-purple-700 leading-relaxed">
+                                延迟槽 (Delay Slot) 是紧随分支指令（如 beq, j）之后的一个指令位置。
+                                MIPS 架构规定：<span className="font-bold">延迟槽中的指令总是会被执行</span>，不受分支跳转结果的影响。
+                            </p>
+                        </div>
+                        <div className="flex-1 bg-slate-50 p-4 rounded border border-slate-100">
+                            <div className="font-bold text-slate-800 text-sm mb-2">为什么要用它？</div>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                它是为了解决控制冒险带来的流水线停顿（气泡）。通过让编译器找一条“无论跳不跳都要执行”的指令填入这个位置，可以填满原本因为等待分支结果而产生的空闲周期，从而实现 0 周期惩罚。
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -5621,8 +6188,10 @@ const App = () => {
                 <div id="tools-chapter-6" className="space-y-6 mt-12 scroll-mt-6">
                     <div className="text-xs font-bold text-slate-300 uppercase pl-1 mb-2 border-b border-slate-200 pb-1">Ch6. 流水线</div>
                     <PipelineSpaceTimeViz />
-                    <ForwardingUnitViz />、
+                    <ForwardingUnitViz />
                     <ControlHazardViz />
+                    <BranchPredictionViz />
+                    <DelayedBranchingViz />
                     <PipelineCalc />
                 </div>
 
