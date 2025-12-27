@@ -2950,89 +2950,448 @@ const ProcedureCallViz = () => {
 };
 // --- 组件结束 ---
 
-// Ch5. Datapath Flow Visualizer
-const DatapathViz = () => {
-    const [instr, setInstr] = useState('R-type'); // R-type, lw, sw, beq
+// --- 组件开始：Ch5 单周期数据通路可视化 (v9.0 - 最终完美版) ---
+const SingleCycleDatapathViz = () => {
+  const [instrType, setInstrType] = useState<"add" | "sub" | "lw" | "sw" | "beq">("lw");
+  const [phase, setPhase] = useState(0); 
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Define active components for each instruction
-    const getActive = (i) => {
-        const active = {
-            'R-type': ['pc', 'im', 'reg', 'alu', 'wb'],
-            'lw': ['pc', 'im', 'reg', 'alu', 'dm', 'wb'],
-            'sw': ['pc', 'im', 'reg', 'alu', 'dm'],
-            'beq': ['pc', 'im', 'reg', 'alu', 'pc-mux']
-        };
-        return active[i] || [];
-    };
+  // 指令配置
+  const instructions = {
+    add: {
+      asm: "add $t1, $t2, $t3",
+      desc: "R-Type: Reg + Reg -> ALU -> Reg",
+      signals: { RegDst: 1, ALUSrc: 0, MemtoReg: 0, RegWrite: 1, MemRead: 0, MemWrite: 0, Branch: 0, ALUOp: "10", PCSrc: 0 },
+      activeWires: {
+        1: ["pc_out", "pc_adder_in", "pc_adder_out", "mux_pc_next_0", "im_read"],
+        2: ["reg_read_1", "reg_read_2", "ctrl_unit", "sig_regdst", "sig_alusrc", "sig_regwrite", "sig_memtoreg"],
+        3: ["alu_in_a", "mux_alu_src_0", "alu_in_b", "alu_out", "sig_aluop"],
+        4: ["alu_bypass"],
+        5: ["mux_wb_0", "wb_data", "wb_write"]
+      }
+    },
+    sub: {
+      asm: "sub $t1, $t2, $t3",
+      desc: "R-Type: Reg - Reg -> ALU -> Reg",
+      signals: { RegDst: 1, ALUSrc: 0, MemtoReg: 0, RegWrite: 1, MemRead: 0, MemWrite: 0, Branch: 0, ALUOp: "10", PCSrc: 0 },
+      activeWires: {
+        1: ["pc_out", "pc_adder_in", "pc_adder_out", "mux_pc_next_0", "im_read"],
+        2: ["reg_read_1", "reg_read_2", "ctrl_unit", "sig_regdst", "sig_alusrc", "sig_regwrite", "sig_memtoreg"],
+        3: ["alu_in_a", "mux_alu_src_0", "alu_in_b", "alu_out", "sig_aluop"],
+        4: ["alu_bypass"],
+        5: ["mux_wb_0", "wb_data", "wb_write"]
+      }
+    },
+    lw: {
+      asm: "lw $t1, 4($t2)",
+      desc: "Load: Mem[Base+Off] -> Reg",
+      signals: { RegDst: 0, ALUSrc: 1, MemtoReg: 1, RegWrite: 1, MemRead: 1, MemWrite: 0, Branch: 0, ALUOp: "00", PCSrc: 0 },
+      activeWires: {
+        1: ["pc_out", "pc_adder_in", "pc_adder_out", "mux_pc_next_0", "im_read"],
+        2: ["reg_read_1", "im_sign_ext", "ctrl_unit", "sig_alusrc", "sig_memread", "sig_memtoreg", "sig_regwrite"],
+        3: ["alu_in_a", "sign_ext_out", "mux_alu_src_1", "alu_in_b", "alu_out", "sig_aluop"],
+        4: ["mem_addr", "mem_read_data"],
+        5: ["mux_wb_1", "wb_data", "wb_write"]
+      }
+    },
+    sw: {
+      asm: "sw $t1, 4($t2)",
+      desc: "Store: Reg -> Mem[Base+Off]",
+      signals: { RegDst: "X", ALUSrc: 1, MemtoReg: "X", RegWrite: 0, MemRead: 0, MemWrite: 1, Branch: 0, ALUOp: "00", PCSrc: 0 },
+      activeWires: {
+        1: ["pc_out", "pc_adder_in", "pc_adder_out", "mux_pc_next_0", "im_read"],
+        2: ["reg_read_1", "reg_read_2", "im_sign_ext", "ctrl_unit", "sig_alusrc", "sig_memwrite"],
+        3: ["alu_in_a", "sign_ext_out", "mux_alu_src_1", "alu_in_b", "alu_out", "mem_write_data_path", "sig_aluop"],
+        4: ["mem_addr", "mem_write_en"],
+        5: []
+      }
+    },
+    beq: {
+      asm: "beq $t1, $t2, label",
+      desc: "Branch: if(Eq) PC = PC+4 + (Off<<2)",
+      signals: { RegDst: "X", ALUSrc: 0, MemtoReg: "X", RegWrite: 0, MemRead: 0, MemWrite: 0, Branch: 1, ALUOp: "01", PCSrc: 1 }, 
+      activeWires: {
+        1: ["pc_out", "pc_adder_in", "pc_adder_out", "im_read"],
+        2: ["reg_read_1", "reg_read_2", "im_sign_ext", "ctrl_unit", "sig_branch", "sig_aluop"],
+        3: ["alu_in_a", "mux_alu_src_0", "alu_in_b", "alu_zero", "branch_adder_in_pc", "branch_adder_in_sign", "branch_adder_out", "sig_branch", "and_gate_out", "mux_pc_branch"], 
+        4: [],
+        5: []
+      }
+    }
+  };
 
-    const activeComponents = getActive(instr);
+  const currentInstr = instructions[instrType];
 
-    const isAct = (id) => activeComponents.includes(id) ? "bg-indigo-600 text-white shadow-md border-indigo-700" : "bg-slate-100 text-slate-400 border-slate-200";
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setPhase(p => {
+          if (p >= 5) { setIsPlaying(false); return 5; }
+          return p + 1;
+        });
+      }, 2500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaying]);
 
-    return (
-        <ToolCard title="数据通路流向演示" icon={Activity} chapter="5">
-            <div className="flex gap-2 mb-4">
-                {['R-type', 'lw', 'sw', 'beq'].map(i => (
-                    <button 
-                        key={i} onClick={() => setInstr(i)}
-                        className={`flex-1 py-1 text-xs font-bold rounded ${instr === i ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}
-                    >
-                        {i}
-                    </button>
-                ))}
+  const reset = () => { setIsPlaying(false); setPhase(0); };
+  const openModal = () => { setIsModalOpen(true); reset(); };
+
+  const isWireActive = (wireId: string) => {
+    for (let p = 1; p <= phase; p++) {
+      if (currentInstr.activeWires[p as keyof typeof currentInstr.activeWires]?.includes(wireId)) return true;
+    }
+    return false;
+  };
+  const isBlockActive = (p: number) => phase >= p;
+
+  const SignalLabel = ({ x, y, name, value, vertical=false }: {x:number, y:number, name:string, value: number|string, vertical?:boolean}) => (
+    <g className="transition-opacity duration-300" opacity={phase >= 2 ? 1 : 0.2}>
+        <text x={x} y={y} fontSize="10" fill="#2563EB" fontWeight="bold" textAnchor="middle" transform={vertical ? `rotate(-90, ${x}, ${y})` : ""}>{name}</text>
+        <rect x={vertical ? x-6 : x+20} y={vertical ? y+5 : y-8} width="16" height="12" rx="2" fill={value===1||value==="10"||value==="01"?"#FEE2E2":"#F1F5F9"} stroke={value===1||value==="10"||value==="01"?"#EF4444":"#CBD5E1"} />
+        <text x={vertical ? x+2 : x+28} y={vertical ? y+14 : y+1} fontSize="9" fill={value===1||value==="10"||value==="01"?"#DC2626":"#64748B"} fontWeight="bold" textAnchor="middle">{value}</text>
+    </g>
+  );
+
+  // --- 1. 简约卡片 ---
+  const CompactCard = (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100 group hover:ring-blue-200 transition-all">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-blue-600" />
+          单周期数据通路
+        </h3>
+        <button onClick={openModal} className="text-slate-400 hover:text-blue-600 transition-colors"><Maximize2 className="w-4 h-4" /></button>
+      </div>
+      <div className="space-y-4">
+        <div className="flex bg-slate-100 p-1 rounded-lg">
+           {["add", "lw", "sw", "beq"].map((t) => (
+             <button key={t} onClick={()=>{setInstrType(t as any); reset();}} 
+               className={`flex-1 py-1.5 text-[10px] font-bold rounded uppercase transition-all ${instrType === t ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}>
+               {t}
+             </button>
+           ))}
+        </div>
+        <div className="bg-slate-50 rounded-lg border border-slate-100 p-4 relative overflow-hidden">
+             <div className="absolute top-0 left-0 h-1 bg-blue-500 transition-all duration-500" style={{width: `${phase*20}%`}}></div>
+             <div className="flex justify-between items-end">
+                <div>
+                    <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">State</div>
+                    <div className="text-lg font-bold text-blue-700">
+                        {phase===0 ? "Idle" : ["IF 取指", "ID 译码", "EX 执行", "MEM 访存", "WB 写回"][phase-1]}
+                    </div>
+                </div>
+                <div className="font-mono text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
+                    {currentInstr.asm}
+                </div>
+             </div>
+        </div>
+        <button onClick={openModal} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg flex items-center justify-center gap-2 transition-all shadow-blue-100 shadow-lg font-bold">
+          <Play className="w-3 h-3 fill-current" /> 打开详细图解 (含信号流)
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- 2. 详细浮窗 ---
+  const DetailModal = isModalOpen && (
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-6xl max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-white/20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-slate-100 bg-white gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-600 rounded-lg shadow-lg shadow-blue-200"><Cpu className="w-6 h-6 text-white"/></div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900">单周期数据通路 (v9.0 Final)</h3>
+                    <div className="text-xs text-slate-500 font-medium">修复分支目标计算路径 · 显式左移单元 (Shift Left 2)</div>
+                </div>
             </div>
+            <div className="flex items-center gap-4">
+                <div className="hidden md:flex bg-slate-100 p-1 rounded-lg">
+                    {(Object.keys(instructions) as Array<keyof typeof instructions>).map((type) => (
+                        <button key={type} onClick={() => { setInstrType(type); reset(); }} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${instrType === type ? "bg-white text-blue-700 shadow-sm ring-1 ring-black/5" : "text-slate-500 hover:text-slate-700"}`}>
+                            {type.toUpperCase()}
+                        </button>
+                    ))}
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
+            </div>
+        </div>
 
-            {/* Simplified Datapath Diagram */}
-            <div className="relative h-40 bg-slate-50 border border-slate-200 rounded-lg p-2 text-[10px] font-bold font-mono">
-                {/* PC */}
-                <div className={`absolute top-16 left-2 w-10 h-8 flex items-center justify-center rounded border transition-colors ${isAct('pc')}`}>PC</div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 flex flex-col gap-6">
+            
+            {/* Viz Container */}
+            <div className="relative w-full aspect-[2.1/1] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden select-none ring-4 ring-slate-50">
+                <div className="absolute top-5 left-5 z-10 bg-white/95 backdrop-blur border border-slate-200 px-4 py-2.5 rounded-xl shadow-lg shadow-slate-200/50">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Instruction</div>
+                    <div className="text-base font-mono font-bold text-blue-600">{currentInstr.asm}</div>
+                </div>
                 
-                {/* IM */}
-                <div className={`absolute top-16 left-16 w-12 h-12 flex items-center justify-center rounded border transition-colors ${isAct('im')}`}>IM</div>
+                <div className="absolute top-5 right-5 z-10 flex flex-col items-end gap-1.5">
+                    {["IF 取指", "ID 译码", "EX 执行", "MEM 访存", "WB 写回"].map((label, idx) => (
+                        <div key={idx} className={`text-[10px] font-bold px-3 py-1 rounded-full transition-all duration-500 flex items-center gap-2 border ${
+                            phase === idx + 1 
+                            ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105" 
+                            : "bg-white border-slate-200 text-slate-300 opacity-60 scale-90"
+                        }`}>
+                           <span className="w-3 text-center">{idx+1}</span> {label}
+                        </div>
+                    ))}
+                </div>
 
-                {/* Reg File */}
-                <div className={`absolute top-16 left-32 w-14 h-12 flex items-center justify-center rounded border transition-colors ${isAct('reg')}`}>Regs</div>
-
-                {/* ALU */}
-                <div className={`absolute top-16 left-52 w-10 h-10 flex items-center justify-center rounded-full border transition-colors ${isAct('alu')}`} style={{clipPath: "polygon(0 0, 100% 20%, 100% 80%, 0 100%)"}}>ALU</div>
-
-                {/* Data Mem */}
-                <div className={`absolute top-16 left-64 w-12 h-12 flex items-center justify-center rounded border transition-colors ${isAct('dm')}`}>DM</div>
-
-                {/* WB / RegWrite Path */}
-                {/* Just a visual block for write back */}
-                <div className={`absolute top-4 left-32 w-14 h-6 flex items-center justify-center rounded border border-dashed transition-colors ${isAct('wb')}`}>Write</div>
-
-                {/* Connections (CSS Arrows) */}
-                <svg className="absolute top-0 left-0 w-full h-full pointer-events-none stroke-current text-slate-300" style={{zIndex:0}}>
-                     <defs>
-                        <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                          <path d="M0,0 L0,6 L6,3 z" fill="currentColor" />
+                {/* SVG 核心绘制 */}
+                <svg viewBox="0 0 900 480" className="w-full h-full">
+                    <defs>
+                        <pattern id="smallGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+                            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#F1F5F9" strokeWidth="1"/>
+                        </pattern>
+                        <marker id="arrow-blue" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#2563EB" />
                         </marker>
-                     </defs>
-                     {/* PC -> IM */}
-                     <line x1="42" y1="80" x2="62" y2="80" strokeWidth="2" markerEnd="url(#arrow)" className={isAct('pc') && isAct('im') ? "text-indigo-400" : ""} />
-                     {/* IM -> Regs */}
-                     <line x1="110" y1="80" x2="126" y2="80" strokeWidth="2" markerEnd="url(#arrow)" className={isAct('im') && isAct('reg') ? "text-indigo-400" : ""} />
-                     {/* Regs -> ALU */}
-                     <line x1="184" y1="80" x2="206" y2="80" strokeWidth="2" markerEnd="url(#arrow)" className={isAct('reg') && isAct('alu') ? "text-indigo-400" : ""} />
-                     {/* ALU -> DM */}
-                     <line x1="248" y1="80" x2="254" y2="80" strokeWidth="2" markerEnd="url(#arrow)" className={isAct('alu') && isAct('dm') ? "text-indigo-400" : ""} />
-                     {/* ALU -> WB (R-type) */}
-                     {instr === 'R-type' && <path d="M 248 80 L 252 80 L 252 30 L 156 30 L 156 62" fill="none" strokeWidth="2" markerEnd="url(#arrow)" className="text-indigo-400" />}
-                     {/* DM -> WB (lw) */}
-                     {instr === 'lw' && <path d="M 304 80 L 310 80 L 310 20 L 156 20 L 156 62" fill="none" strokeWidth="2" markerEnd="url(#arrow)" className="text-indigo-400" />}
-                     {/* Branch Path */}
-                     {instr === 'beq' && <path d="M 228 70 L 228 10 L 32 10 L 32 62" fill="none" strokeWidth="2" strokeDasharray="4" markerEnd="url(#arrow)" className="text-indigo-400" />}
-                </svg>
+                        <marker id="arrow-gray" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                            <path d="M0,0 L5,2.5 L0,5" fill="#CBD5E1" />
+                        </marker>
+                        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                            <feMerge>
+                                <feMergeNode in="coloredBlur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
 
+                    {/* 0. 背景网格 */}
+                    <rect width="100%" height="100%" fill="url(#smallGrid)" />
+
+                    {/* === 1. 静态线路 (灰色) === */}
+                    <g stroke="#E2E8F0" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                        
+                        {/* PC Logic */}
+                        <path d="M120 280 L140 280" /> 
+                        <path d="M130 280 L130 180 L160 180" /> 
+                        <path d="M200 180 L240 180" /> 
+                        <path d="M240 180 L240 250 L40 250 L40 270" /> 
+                        
+                        {/* Branch Logic (Updated Path) */}
+                        <path d="M240 180 L240 120 L480 120" /> {/* PC+4 -> Branch Addr In A */}
+                        <path d="M520 140 L820 140 L820 40 L60 40 L60 270" /> {/* Branch Target -> Mux */}
+
+                        {/* Control Inputs */}
+                        <path d="M420 80 L420 60 L580 60" /> 
+                        <path d="M540 280 L560 280 L560 80 L580 80" /> 
+                        <path d="M620 70 L640 70 L640 20 L40 20 L40 250" /> 
+
+                        {/* Standard Paths */}
+                        <path d="M170 240 L170 80 L380 80" />
+                        <path d="M200 260 L260 260" /> 
+                        <path d="M200 300 L260 300" /> 
+                        <path d="M200 320 L220 320 L220 400 L260 400" /> 
+
+                        <path d="M340 260 L460 260" /> 
+                        <path d="M340 300 L420 300" /> 
+                        
+                        {/* SignExt Out & Branch Path (The one you asked about) */}
+                        <path d="M320 400 L400 400 L400 340 L420 340" /> {/* To ALU Mux */}
+                        <path d="M360 400 L360 260 L360 160 L480 160" /> {/* To Branch Addr (via Shift Left 2) */}
+
+                        <path d="M460 320 L480 320" /> 
+                        <path d="M540 290 L600 290" /> 
+                        <path d="M340 300 L360 300 L360 420 L620 420 L620 330" /> 
+                        <path d="M560 290 L560 360 L700 360" /> 
+                        <path d="M660 290 L700 290" /> 
+                        <path d="M740 325 L780 325 L780 460 L240 460 L240 340 L260 340" />
+                    </g>
+
+                    {/* === 2. 组件 Blocks === */}
+                    <g strokeWidth="2" fontSize="11" fontWeight="bold" textAnchor="middle">
+                        {/* PC Area */}
+                        <polygon points="40,260 60,270 60,300 40,310" fill={isBlockActive(1)?"#EFF6FF":"white"} stroke="#94A3B8" />
+                        <rect x="80" y="260" width="40" height="40" rx="4" fill={isBlockActive(1)?"#DBEAFE":"white"} stroke={isBlockActive(1)?"#2563EB":"#CBD5E1"} />
+                        <text x="100" y="285" fill="#475569">PC</text>
+                        <polygon points="160,160 160,200 190,200 200,180 190,160" fill="white" stroke="#CBD5E1" />
+                        <text x="175" y="185" fill="#94A3B8" fontSize="10">+4</text>
+
+                        {/* Shift Left 2 (The Missing Piece!) */}
+                        <ellipse cx="360" cy="220" rx="20" ry="15" fill="white" stroke="#CBD5E1" />
+                        <text x="360" y="225" fontSize="9" fill="#64748B">{"<<2"}</text>
+
+                        {/* IM & Control */}
+                        <rect x="140" y="240" width="60" height="100" rx="4" fill={isBlockActive(1)?"#DBEAFE":"white"} stroke={isBlockActive(1)?"#2563EB":"#CBD5E1"} />
+                        <text x="170" y="285" fill="#475569">Instr</text>
+                        <text x="170" y="300" fill="#475569">Mem</text>
+                        <ellipse cx="380" cy="80" rx="40" ry="25" fill={isBlockActive(2)?"#FEF3C7":"white"} stroke={isBlockActive(2)?"#D97706":"#CBD5E1"} />
+                        <text x="380" y="85" fill="#92400E">Control</text>
+                        <path d="M580 50 L600 50 Q620 50 620 70 Q620 90 600 90 L580 90 Z" fill="white" stroke="#CBD5E1" />
+                        <text x="595" y="75" fontSize="10" fill="#94A3B8">&</text>
+
+                        {/* Execution Area */}
+                        <rect x="260" y="240" width="80" height="110" rx="4" fill={isBlockActive(2)?"#DBEAFE":"white"} stroke={isBlockActive(2)?"#2563EB":"#CBD5E1"} />
+                        <text x="300" y="295" fill="#475569">Regs</text>
+                        <ellipse cx="290" cy="400" rx="30" ry="15" fill={isBlockActive(2)?"#DBEAFE":"white"} stroke={isBlockActive(2)?"#2563EB":"#CBD5E1"} />
+                        <text x="290" y="405" fill="#475569" fontSize="9">SignEx</text>
+                        <polygon points="480,120 480,160 510,160 520,140 510,120" fill="white" stroke="#CBD5E1" />
+                        <text x="495" y="145" fill="#94A3B8" fontSize="10">Add</text>
+                        <polygon points="420,290 460,300 460,340 420,350" fill={isBlockActive(3)?"#EFF6FF":"white"} stroke="#94A3B8" />
+                        <path d="M480 250 L540 270 L540 310 L480 330 L480 300 L470 290 L480 280 Z" fill={isBlockActive(3)?"#DBEAFE":"white"} stroke={isBlockActive(3)?"#2563EB":"#CBD5E1"} />
+                        <text x="515" y="300" fill="#1E293B">ALU</text>
+                        <text x="525" y="310" fontSize="8" fill="#94A3B8">0</text>
+
+                        {/* Memory & WB */}
+                        <rect x="600" y="250" width="60" height="100" rx="4" fill={isBlockActive(4)?"#DBEAFE":"white"} stroke={isBlockActive(4)?"#2563EB":"#CBD5E1"} />
+                        <text x="630" y="295" fill="#475569">Data</text>
+                        <text x="630" y="310" fill="#475569">Mem</text>
+                        <polygon points="700,280 740,290 740,360 700,370" fill={isBlockActive(5)?"#EFF6FF":"white"} stroke="#94A3B8" />
+                    </g>
+
+                    {/* === 3. 动态激活线路 (蓝色高亮) === */}
+                    <g strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)">
+                        
+                        {/* IF Phase */}
+                        {isWireActive("pc_out") && <path d="M120 280 L140 280" stroke="#2563EB" markerEnd="url(#arrow-blue)" />}
+                        {isWireActive("pc_adder_in") && <path d="M130 280 L130 180 L160 180" stroke="#2563EB" />}
+                        {isWireActive("pc_adder_out") && <path d="M200 180 L240 180 L240 250 L40 250 L40 270" stroke="#2563EB" />}
+                        {isWireActive("mux_pc_next_0") && <path d="M60 280 L80 280" stroke="#2563EB" />}
+                        {isWireActive("im_read") && <circle cx="140" cy="280" r="3" fill="#2563EB" stroke="none" />}
+                        
+                        {/* ID Phase */}
+                        {isWireActive("reg_read_1") && <path d="M200 260 L260 260" stroke="#2563EB" />}
+                        {isWireActive("reg_read_2") && <path d="M200 300 L260 300" stroke="#2563EB" />}
+                        {isWireActive("im_sign_ext") && <path d="M200 320 L220 320 L220 400 L260 400" stroke="#2563EB" />}
+                        {isWireActive("ctrl_unit") && <path d="M170 240 L170 80 L380 80" stroke="#F59E0B" strokeDasharray="3,3" />}
+
+                        {/* EX Phase */}
+                        {isWireActive("alu_in_a") && <path d="M340 260 L480 260" stroke="#2563EB" />}
+                        {isWireActive("mux_alu_src_0") && <path d="M340 300 L420 300" stroke="#2563EB" />}
+                        {isWireActive("sign_ext_out") && <path d="M320 400 L400 400 L400 340 L420 340" stroke="#2563EB" />}
+                        {isWireActive("mux_alu_src_1") && <path d="M460 320 L480 320" stroke="#2563EB" />}
+                        
+                        {/* Branch Logic Path (FIXED with Shift Left 2) */}
+                        {isWireActive("branch_adder_in_pc") && <path d="M240 180 L240 120 L480 120" stroke="#2563EB" />}
+                        {/* From SignExt -> Split Dot -> Shift Left 2 -> Branch Adder */}
+                        {isWireActive("branch_adder_in_sign") && (
+                            <>
+                                <circle cx="360" cy="400" r="3" fill="#2563EB" stroke="none" />
+                                <path d="M360 400 L360 260 L360 160 L480 160" stroke="#2563EB" />
+                            </>
+                        )}
+                        {isWireActive("branch_adder_out") && <path d="M520 140 L820 140 L820 40 L60 40 L60 270" stroke="#2563EB" />}
+                        
+                        {/* Control Signals */}
+                        {isWireActive("sig_branch") && <path d="M420 80 L420 60 L580 60" stroke="#F59E0B" strokeDasharray="3,3" />}
+                        {isWireActive("alu_zero") && <path d="M540 280 L560 280 L560 80 L580 80" stroke="#DC2626" strokeDasharray="2,2" />}
+                        {isWireActive("and_gate_out") && <path d="M620 70 L640 70 L640 20 L40 20 L40 250" stroke="#2563EB" strokeDasharray="3,3" />}
+                        {isWireActive("mux_pc_branch") && <path d="M40 280 L60 280" stroke="#2563EB" />}
+
+                        {/* MEM Phase */}
+                        {isWireActive("alu_out") && <path d="M540 290 L600 290" stroke="#2563EB" />}
+                        {isWireActive("alu_bypass") && <path d="M560 290 L560 360 L700 360" stroke="#2563EB" />}
+                        {isWireActive("mem_write_data_path") && <path d="M340 300 L360 300 L360 420 L620 420 L620 330" stroke="#F59E0B" strokeDasharray="4,4" />}
+
+                        {/* WB Phase */}
+                        {isWireActive("mux_wb_0") && <path d="M660 290 L700 290" stroke="#2563EB" />}
+                        {isWireActive("mux_wb_1") && <path d="M560 290 L560 360 L700 360" stroke="#2563EB" />}
+                        {isWireActive("wb_data") && <path d="M740 325 L780 325 L780 460 L240 460 L240 340 L260 340" stroke="#2563EB" strokeDasharray="3,3" />}
+                        {isWireActive("wb_write") && <circle cx="260" cy="340" r="4" fill="#2563EB" stroke="none" className="animate-pulse" />}
+                    </g>
+
+                    {/* === 4. 信号标注 === */}
+                    <g>
+                        <SignalLabel x={300} y={235} name="RegDst" value={currentInstr.signals.RegDst} />
+                        <SignalLabel x={440} y={365} name="ALUSrc" value={currentInstr.signals.ALUSrc} />
+                        <SignalLabel x={720} y={270} name="MemtoReg" value={currentInstr.signals.MemtoReg} />
+                        <SignalLabel x={220} y={350} name="RegWrite" value={currentInstr.signals.RegWrite} vertical />
+                        <SignalLabel x={630} y={225} name="MemRead" value={currentInstr.signals.MemRead} />
+                        <SignalLabel x={630} y={345} name="MemWrite" value={currentInstr.signals.MemWrite} />
+                        <SignalLabel x={500} y={55} name="Branch" value={currentInstr.signals.Branch} />
+                        <SignalLabel x={500} y={240} name="ALUOp" value={currentInstr.signals.ALUOp} />
+                        <SignalLabel x={560} y={270} name="Zero" value={phase>=3 && instrType==='beq' ? 1 : 0} />
+                        <SignalLabel x={30} y={240} name="PCSrc" value={currentInstr.signals.PCSrc} />
+                    </g>
+                </svg>
             </div>
-            <div className="text-[10px] text-slate-500 mt-2 text-center">
-                *实线: 数据流; 虚线: 控制流/回写
+
+            {/* 控制面板与表格 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                 {/* 播放器 */}
+                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Activity className="w-4 h-4 text-blue-500" />
+                            <span className="text-xs font-bold text-slate-500 uppercase">状态说明</span>
+                        </div>
+                        <div className="text-sm text-slate-600 leading-relaxed font-medium min-h-[60px]">
+                            {phase === 0 && "准备就绪。点击下方按钮开始演示数据在 CPU 中的流动。"}
+                            {phase === 1 && "IF (取指): PC -> 加法器 (+4) 计算下一条指令地址。指令存储器读出指令。"}
+                            {phase === 2 && "ID (译码): 读取寄存器堆。立即数进行符号扩展。控制器生成信号。"}
+                            {phase === 3 && `EX (执行): ALU 计算 ${instrType==='lw'||instrType==='sw' ? '物理地址' : '运算结果'}。${instrType==='beq'?'计算跳转地址并检查 Zero。':''}`}
+                            {phase === 4 && (currentInstr.signals.MemRead ? "MEM (访存): 从数据存储器读取数据。" : currentInstr.signals.MemWrite ? "MEM (访存): 将数据写入存储器。" : "跳过访存阶段 (Result 直通)。")}
+                            {phase === 5 && (currentInstr.signals.RegWrite ? "WB (写回): 结果沿底部回路写回寄存器堆。" : "无写回操作。")}
+                        </div>
+                    </div>
+                    <div className="flex gap-3 mt-4 pt-4 border-t border-slate-100">
+                        <button onClick={reset} className="p-2.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"><RotateCcw className="w-5 h-5"/></button>
+                        <button onClick={()=>{if(phase>=5)setPhase(0); setIsPlaying(!isPlaying);}} className={`flex-1 flex items-center justify-center gap-2 rounded-lg font-bold text-sm transition-all shadow-md ${isPlaying ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                            {isPlaying ? <Pause className="w-4 h-4 fill-current"/> : <Play className="w-4 h-4 fill-current"/>}
+                            {isPlaying ? "暂停" : phase>=5 ? "重播" : "执行"}
+                        </button>
+                    </div>
+                 </div>
+
+                 {/* 信号表 */}
+                 <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2 text-xs font-bold text-slate-600 uppercase">
+                        <TableIcon className="w-4 h-4" /> 关键控制信号 (Control Signals)
+                    </div>
+                    <div className="flex-1 overflow-x-auto">
+                        <table className="w-full text-xs text-center font-mono">
+                            <thead>
+                                <tr className="bg-white text-slate-400 font-bold border-b border-slate-100">
+                                    <th className="px-4 py-3 text-left pl-6">Signal</th>
+                                    <th className="px-2">RegDst</th>
+                                    <th className="px-2">ALUSrc</th>
+                                    <th className="px-2">MemtoReg</th>
+                                    <th className="px-2">RegWrite</th>
+                                    <th className="px-2">MemRead</th>
+                                    <th className="px-2">MemWrite</th>
+                                    <th className="px-2">Branch</th>
+                                    <th className="px-2">ALUOp</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr className="text-slate-700 font-medium">
+                                    <td className="px-4 py-3 text-left pl-6 font-bold text-blue-600">Value</td>
+                                    <td className={currentInstr.signals.RegDst===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.RegDst}</td>
+                                    <td className={currentInstr.signals.ALUSrc===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.ALUSrc}</td>
+                                    <td className={currentInstr.signals.MemtoReg===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.MemtoReg}</td>
+                                    <td className={currentInstr.signals.RegWrite===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.RegWrite}</td>
+                                    <td className={currentInstr.signals.MemRead===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.MemRead}</td>
+                                    <td className={currentInstr.signals.MemWrite===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.MemWrite}</td>
+                                    <td className={currentInstr.signals.Branch===1?"bg-amber-50 text-amber-700 font-bold":""}>{currentInstr.signals.Branch}</td>
+                                    <td>{currentInstr.signals.ALUOp}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                 </div>
             </div>
-        </ToolCard>
-    );
+
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {CompactCard}
+      {DetailModal}
+    </>
+  );
 };
+// --- 组件结束 ---
 
 // Ch5. Multi-cycle FSM Walker
 const FsmWalker = () => {
@@ -4547,7 +4906,7 @@ const App = () => {
 
                 <div id="tools-chapter-5" className="space-y-6 mt-12 scroll-mt-6">
                      <div className="text-xs font-bold text-slate-300 uppercase pl-1 mb-2 border-b border-slate-200 pb-1">Ch5. 处理器</div>
-                    <DatapathViz />
+                    <SingleCycleDatapathViz />
                     <FsmWalker />
                     <ExceptionDemo />
                     <ControlSignalViewer />
