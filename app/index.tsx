@@ -2953,11 +2953,12 @@ const DiskPerformanceCalc = () => {
 // --- Main App ---
 
 const App = () => {
-  const [notes, setNotes] = useState(USER_DOCUMENT);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
-  
+    const [notes, setNotes] = useState(USER_DOCUMENT);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isNavOpen, setIsNavOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [docWidth, setDocWidth] = useState(896);
+    const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   // Ref for the right sidebar to enable programmatic scrolling
   const rightSidebarRef = useRef<HTMLDivElement>(null);
   
@@ -3009,14 +3010,36 @@ const App = () => {
   return (
     <div className="h-screen flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* Header */}
-      <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-20 shadow-sm relative">
-        <div className="flex items-center gap-2">
-            <div className="bg-indigo-600 text-white p-1.5 rounded-lg">
-                <Cpu className="w-4 h-4" />
+      <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm relative">
+        <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsNavOpen(!isNavOpen)}
+              className="p-2 rounded-md hover:bg-slate-100 text-slate-500 transition-colors"
+              title={isNavOpen ? "收起导航" : "展开导航"}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2">
+                <div className="bg-indigo-600 text-white p-1.5 rounded-lg">
+                    <Cpu className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-lg tracking-tight text-slate-800">计组复习</span>
             </div>
-            <span className="font-bold text-lg tracking-tight text-slate-800">CO.Review</span>
         </div>
         <div className="flex items-center gap-3">
+             <div className="hidden lg:flex items-center gap-2 mr-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                <MoveHorizontal className="w-3.5 h-3.5 text-slate-400" />
+                <input 
+                  type="range" 
+                  min="600" 
+                  max="1400" 
+                  step="40"
+                  value={docWidth} 
+                  onChange={(e) => setDocWidth(parseInt(e.target.value))}
+                  className="w-20 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  title={`调整文档宽度: ${docWidth}px`}
+                />
+             </div>
              <button 
               onClick={() => setIsEditing(!isEditing)}
               className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors flex items-center gap-1.5"
@@ -3039,33 +3062,40 @@ const App = () => {
       <div className="flex-1 flex overflow-hidden">
         
         {/* Left Sidebar (Navigation) */}
-        <aside className="w-64 bg-slate-50 border-r border-slate-200 flex-shrink-0 flex flex-col hidden md:flex">
-             <div className="p-4 border-b border-slate-200 bg-white/50 backdrop-blur-sm sticky top-0 z-10">
-                <div className="flex items-center gap-2 text-slate-500 mb-1">
-                    <List className="w-4 h-4" />
-                    <span className="text-xs font-bold uppercase tracking-wider">章节导航</span>
-                </div>
-             </div>
-             <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
-                {CHAPTERS.map((chapter) => (
-                    <button
-                        key={chapter.id}
-                        onClick={() => scrollToChapter(chapter.id)}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 border-l-2 ${
-                            activeChapterId === chapter.id 
-                            ? 'bg-white border-indigo-600 text-indigo-700 shadow-sm font-medium' 
-                            : 'border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
-                        }`}
-                    >
-                        <div className="truncate">{chapter.title}</div>
-                    </button>
-                ))}
-             </div>
+        <aside 
+          className={`bg-slate-50 flex-shrink-0 flex flex-col hidden md:flex transition-all duration-300 ease-in-out border-r border-slate-200 ${
+            isNavOpen ? 'w-64 opacity-100' : 'w-0 opacity-0 border-none'
+          }`}
+        >
+          <div className="p-4 border-b border-slate-200 bg-white/50 backdrop-blur-sm sticky top-0 z-10">
+            <div className="flex items-center gap-2 text-slate-500">
+              <List className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">章节导航</span>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+            {CHAPTERS.map((chapter) => (
+              <button
+                key={chapter.id}
+                onClick={() => scrollToChapter(chapter.id)}
+                className={`w-full text-left px-3 py-2 rounded-md text-sm transition-all duration-200 border-l-2 ${
+                  activeChapterId === chapter.id 
+                  ? 'bg-white border-indigo-600 text-indigo-700 shadow-sm font-medium' 
+                  : 'border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
+                }`}
+              >
+                <div className="truncate">{chapter.title}</div>
+              </button>
+            ))}
+          </div>
         </aside>
 
         {/* Main Document Area */}
         <main className="flex-1 overflow-y-auto bg-slate-50/50 scrollbar-thin scroll-smooth relative">
-           <div className="max-w-4xl mx-auto p-8 min-h-full bg-white shadow-sm border-x border-slate-100/50">
+           <div 
+             style={{ maxWidth: `${docWidth}px` }}
+             className="mx-auto p-8 min-h-full bg-white shadow-sm border-x border-slate-100/50 transition-[max-width] duration-300 ease-in-out"
+           >
              {isEditing ? (
                 <textarea
                   className="w-full h-full min-h-[80vh] resize-none outline-none font-mono text-sm text-slate-700 leading-relaxed"
