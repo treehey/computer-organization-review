@@ -2588,7 +2588,7 @@ const StackFrameViz = () => {
     );
 };
 
-// --- 组件开始：Ch4 过程调用可视化 (ProcedureCallViz) - 浅色版 ---
+// --- 组件开始：Ch4 过程调用可视化 (ProcedureCallViz) - 高对比度中文版 ---
 const ProcedureCallViz = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -2607,27 +2607,27 @@ const ProcedureCallViz = () => {
 
   // 模拟栈内存
   const [stack, setStack] = useState<Array<{addr: number, val: number | string, label: string, active: boolean}>>([
-    { addr: 0x7FFFFFF0, val: 0, label: "Caller Stack...", active: false },
-    { addr: 0x7FFFFFEC, val: 0, label: "Empty", active: false },
-    { addr: 0x7FFFFFE8, val: 0, label: "Empty", active: false },
-    { addr: 0x7FFFFFE4, val: 0, label: "Empty", active: false },
+    { addr: 0x7FFFFFF0, val: 0, label: "调用者栈帧", active: false },
+    { addr: 0x7FFFFFEC, val: 0, label: "空闲", active: false },
+    { addr: 0x7FFFFFE8, val: 0, label: "空闲", active: false },
+    { addr: 0x7FFFFFE4, val: 0, label: "空闲", active: false },
   ]);
 
   // 指令序列
   const instructions = [
     { addr: 0x00400000, asm: "li   $a0, 5",      desc: "加载参数 n=5 到 $a0" },
-    { addr: 0x00400004, asm: "jal  sum",          desc: "跳转到 sum，并将返回地址(PC+4)存入 $ra" },
-    { addr: 0x00400008, asm: "move $t0, $v0",     desc: "调用返回！将结果 $v0 存入 $t0" }, // Return point
+    { addr: 0x00400004, asm: "jal  sum",          desc: "跳转 sum，并存返回地址到 $ra" },
+    { addr: 0x00400008, asm: "move $t0, $v0",     desc: "返回！结果 $v0 存入 $t0" }, // Return point
     { addr: 0x0040000C, asm: "DONE",              desc: "程序结束" },
     // --- sum 函数 ---
-    { addr: 0x00400020, asm: "sum: addi $sp, $sp, -8", desc: "开辟栈帧：$sp 下移 8 字节" },
-    { addr: 0x00400024, asm: "sw   $ra, 4($sp)",  desc: "保存 $ra 到栈" },
-    { addr: 0x00400028, asm: "sw   $s0, 0($sp)",  desc: "保存 $s0 到栈 (保护现场)" },
-    { addr: 0x0040002C, asm: "add  $s0, $a0, $a0",desc: "执行计算：$s0 = 5 + 5 = 10" },
+    { addr: 0x00400020, asm: "sum: addi $sp, $sp, -8", desc: "开栈：$sp 下移 8 字节" },
+    { addr: 0x00400024, asm: "sw   $ra, 4($sp)",  desc: "保存 $ra (返回地址) 入栈" },
+    { addr: 0x00400028, asm: "sw   $s0, 0($sp)",  desc: "保存 $s0 (保护现场) 入栈" },
+    { addr: 0x0040002C, asm: "add  $s0, $a0, $a0",desc: "计算：$s0 = 5 + 5 = 10" },
     { addr: 0x00400030, asm: "move $v0, $s0",     desc: "设置返回值 $v0 = 10" },
     { addr: 0x00400034, asm: "lw   $s0, 0($sp)",  desc: "恢复 $s0 (恢复现场)" },
     { addr: 0x00400038, asm: "lw   $ra, 4($sp)",  desc: "恢复 $ra (找回返回地址)" },
-    { addr: 0x0040003C, asm: "addi $sp, $sp, 8",  desc: "销毁栈帧：$sp 上移 8 字节" },
+    { addr: 0x0040003C, asm: "addi $sp, $sp, 8",  desc: "退栈：$sp 上移 8 字节" },
     { addr: 0x00400040, asm: "jr   $ra",          desc: "跳转回 $ra 指向的地址" },
   ];
 
@@ -2635,7 +2635,7 @@ const ProcedureCallViz = () => {
   const executeStep = (step: number) => {
     if (step === 0) {
       setRegs({ pc: 0x00400000, sp: 0x7FFFFFF0, ra: 0, a0: 0, v0: 0, s0: 0 });
-      setStack(prev => prev.map(s => ({ ...s, val: 0, label: s.addr === 0x7FFFFFF0 ? "Caller Stack..." : "Empty", active: false })));
+      setStack(prev => prev.map(s => ({ ...s, val: 0, label: s.addr === 0x7FFFFFF0 ? "调用者栈帧" : "空闲", active: false })));
       setExplanation("程序就绪。准备调用 sum(5)。");
       return;
     }
@@ -2655,12 +2655,12 @@ const ProcedureCallViz = () => {
         break;
       case 4: // sw $ra, 4($sp)
         setRegs(r => ({ ...r, pc: 0x00400028 }));
-        setStack(s => s.map(item => item.addr === 0x7FFFFFEC ? { ...item, val: "0x00400008", label: "Saved $ra", active: true } : { ...item, active: false }));
+        setStack(s => s.map(item => item.addr === 0x7FFFFFEC ? { ...item, val: "0x00400008", label: "保存的 $ra", active: true } : { ...item, active: false }));
         setExplanation("Sum: 将返回地址 $ra 入栈保存。防止调用其他子程序时丢失回家的路。");
         break;
       case 5: // sw $s0, 0($sp)
         setRegs(r => ({ ...r, pc: 0x0040002C }));
-        setStack(s => s.map(item => item.addr === 0x7FFFFFE8 ? { ...item, val: "Old $s0", label: "Saved $s0", active: true } : { ...item, active: false }));
+        setStack(s => s.map(item => item.addr === 0x7FFFFFE8 ? { ...item, val: "旧的 $s0", label: "保存的 $s0", active: true } : { ...item, active: false }));
         setExplanation("Sum: 将保留寄存器 $s0 入栈保存。保护现场。");
         break;
       case 6: // add $s0, $a0, $a0
@@ -2717,38 +2717,38 @@ const ProcedureCallViz = () => {
   }, [isPlaying, isModalOpen]);
 
 
-  // 1. 简约卡片 (浅色版)
+  // 1. 简约卡片 (侧边栏)
   const CompactCard = (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm w-full ring-1 ring-slate-100">
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-amber-500" />
+          <GitBranch className="w-4 h-4 text-amber-600" />
           过程调用 (JAL/JR)
         </h3>
         <button 
           onClick={() => { setIsModalOpen(true); setCurrentStep(0); }}
-          className="text-slate-400 hover:text-slate-600 transition-colors"
+          className="text-slate-400 hover:text-blue-600 transition-colors"
         >
           <Maximize2 className="w-4 h-4" />
         </button>
       </div>
-      <div className="flex gap-2 text-xs font-mono text-slate-500 mb-2">
-        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200">
-            <div className="text-slate-400 text-[10px] uppercase font-bold">PC</div>
-            <div className="text-amber-600 font-bold">0x{regs.pc.toString(16).toUpperCase()}</div>
+      <div className="flex gap-2 text-xs font-mono text-slate-600 mb-2">
+        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200 shadow-sm">
+            <div className="text-slate-400 text-[10px] uppercase font-bold">PC指针</div>
+            <div className="text-amber-700 font-bold">0x{regs.pc.toString(16).toUpperCase()}</div>
         </div>
-        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200">
-            <div className="text-slate-400 text-[10px] uppercase font-bold">$RA</div>
-            <div className="text-blue-600 font-bold">0x{regs.ra.toString(16).toUpperCase()}</div>
+        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200 shadow-sm">
+            <div className="text-slate-400 text-[10px] uppercase font-bold">返回地址 $RA</div>
+            <div className="text-blue-700 font-bold">0x{regs.ra.toString(16).toUpperCase()}</div>
         </div>
-        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200">
-            <div className="text-slate-400 text-[10px] uppercase font-bold">$SP</div>
-            <div className="text-emerald-600 font-bold">...{regs.sp.toString(16).slice(-2)}</div>
+        <div className="flex-1 bg-slate-50 p-2 rounded border border-slate-200 shadow-sm">
+            <div className="text-slate-400 text-[10px] uppercase font-bold">栈指针 $SP</div>
+            <div className="text-emerald-700 font-bold">...{regs.sp.toString(16).slice(-2)}</div>
         </div>
       </div>
       <button 
         onClick={() => { setIsModalOpen(true); setCurrentStep(0); setIsPlaying(true); }}
-        className="w-full py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs rounded border border-amber-200 flex items-center justify-center gap-1 transition-colors font-medium"
+        className="w-full py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs rounded border border-amber-200 flex items-center justify-center gap-2 transition-colors font-bold"
       >
         <Play className="w-3 h-3 fill-current" />
         演示调用栈动画
@@ -2756,72 +2756,76 @@ const ProcedureCallViz = () => {
     </div>
   );
 
-  // 2. 详细浮窗 (浅色版)
+  // 2. 详细浮窗
   const DetailModal = isModalOpen && (
-    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-slate-900/5">
+    <div className="fixed inset-0 z-[9999] w-screen h-screen !m-0 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-7xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 ring-1 ring-black/5">
         
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
-           <div className="flex items-center gap-3">
-             <div className="p-2 bg-amber-100 rounded-lg"><GitBranch className="w-5 h-5 text-amber-600"/></div>
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-white">
+           <div className="flex items-center gap-4">
+             <div className="p-2.5 bg-amber-100 rounded-xl"><GitBranch className="w-6 h-6 text-amber-600"/></div>
              <div>
-               <h3 className="text-lg font-bold text-slate-800">过程调用机制 (Procedure Call)</h3>
-               <div className="text-xs text-slate-500">模拟 JAL(调用), JR(返回) 及 栈帧(Stack Frame) 管理</div>
+               <h3 className="text-xl font-bold text-slate-900">过程调用机制 (Procedure Call)</h3>
+               <div className="text-sm text-slate-500">模拟 JAL (调用), JR (返回) 及 栈帧 (Stack Frame) 管理</div>
              </div>
            </div>
-           <button onClick={()=>setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"><X className="w-5 h-5"/></button>
+           <button onClick={()=>setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-800 transition-colors"><X className="w-6 h-6"/></button>
         </div>
 
         {/* Content Grid */}
-        <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+        <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200 bg-slate-50">
             
-            {/* Col 1: Code & Explain */}
-            <div className="flex flex-col h-full bg-slate-50/50">
-                <div className="p-3 bg-slate-100/50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">MIPS Assembly</div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-xs bg-white">
+            {/* Col 1: 代码与解释 */}
+            <div className="flex flex-col h-full bg-white">
+                <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
+                    <FileCode className="w-4 h-4" /> MIPS 汇编代码
+                </div>
+                <div className="flex-1 overflow-y-auto p-0 font-mono text-sm">
                     {instructions.map((inst, idx) => {
                         const isCurrent = inst.addr === regs.pc;
                         return (
                             <div 
                                 key={inst.addr} 
-                                className={`flex gap-3 p-2 rounded transition-all duration-300 border ${isCurrent ? 'bg-amber-50 border-amber-200 text-amber-900 shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
+                                className={`flex gap-4 px-4 py-2.5 transition-all duration-200 border-l-4 ${isCurrent ? 'bg-amber-50 border-amber-500 text-amber-900' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
                             >
-                                <div className={`select-none w-16 text-right ${isCurrent ? 'text-amber-700/60' : 'text-slate-300'}`}>{inst.addr.toString(16).toUpperCase().slice(-4)}</div>
-                                <div className={`font-bold ${inst.asm.includes(":") ? "text-blue-600" : ""}`}>{inst.asm}</div>
+                                <div className={`select-none w-12 text-right text-xs pt-0.5 opacity-60`}>{inst.addr.toString(16).toUpperCase().slice(-4)}</div>
+                                <div className={`font-bold flex-1 ${inst.asm.includes(":") ? "text-blue-700" : ""}`}>{inst.asm}</div>
                             </div>
                         )
                     })}
                 </div>
-                <div className="p-4 bg-slate-50 border-t border-slate-200 min-h-[100px]">
-                    <div className="flex items-center gap-2 mb-2 text-amber-600 font-bold text-sm">
-                        <Activity className="w-4 h-4" /> 当前操作
+                <div className="p-5 bg-slate-50 border-t border-slate-200 min-h-[110px]">
+                    <div className="flex items-center gap-2 mb-2 text-amber-700 font-bold text-sm uppercase tracking-wide">
+                        <Activity className="w-4 h-4" /> 当前操作详解
                     </div>
-                    <div className="text-sm text-slate-600 leading-relaxed font-medium">
+                    <div className="text-sm text-slate-800 leading-relaxed font-medium">
                         {explanation}
                     </div>
                 </div>
             </div>
 
-            {/* Col 2: Registers */}
+            {/* Col 2: 寄存器状态 */}
             <div className="flex flex-col h-full bg-white">
-                 <div className="p-3 bg-slate-100/50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">CPU Registers</div>
-                 <div className="p-6 grid grid-cols-1 gap-4 overflow-y-auto">
+                 <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
+                    <Cpu className="w-4 h-4" /> CPU 寄存器堆
+                 </div>
+                 <div className="p-6 grid grid-cols-1 gap-6 overflow-y-auto">
                      {/* PC & RA */}
-                     <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                         <div className="text-xs text-slate-400 font-bold mb-3 flex justify-between uppercase tracking-wider">
-                            <span>Control Flow</span>
+                     <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm ring-1 ring-slate-100">
+                         <div className="text-xs text-slate-400 font-bold mb-4 flex justify-between uppercase tracking-wider">
+                            <span>控制流寄存器</span>
                          </div>
-                         <div className="space-y-3">
+                         <div className="space-y-4">
                              <div className="flex justify-between items-center">
-                                 <span className="font-mono text-slate-500 font-bold w-8">$PC</span>
-                                 <span className="font-mono text-amber-600 font-bold text-lg transition-all duration-300 bg-amber-50 px-2 rounded border border-amber-100">
+                                 <span className="font-mono text-slate-600 font-bold text-base">$PC</span>
+                                 <span className="font-mono text-amber-700 font-bold text-xl transition-all duration-300 bg-amber-50 px-3 py-1 rounded border border-amber-100 min-w-[5rem] text-center">
                                     {regs.pc.toString(16).toUpperCase()}
                                  </span>
                              </div>
                              <div className="flex justify-between items-center">
-                                 <span className="font-mono text-slate-500 font-bold w-8">$RA</span>
-                                 <span className={`font-mono text-lg font-bold transition-all duration-300 px-2 rounded border ${regs.ra !== 0 ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
+                                 <span className="font-mono text-slate-600 font-bold text-base">$RA</span>
+                                 <span className={`font-mono text-xl font-bold transition-all duration-300 px-3 py-1 rounded border min-w-[5rem] text-center ${regs.ra !== 0 ? 'text-blue-700 bg-blue-50 border-blue-100' : 'text-slate-400 bg-slate-50 border-slate-100'}`}>
                                     {regs.ra.toString(16).toUpperCase()}
                                  </span>
                              </div>
@@ -2829,99 +2833,108 @@ const ProcedureCallViz = () => {
                      </div>
 
                      {/* Arguments & Returns */}
-                     <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                         <div className="text-xs text-slate-400 font-bold mb-3 uppercase tracking-wider">Data</div>
-                         <div className="space-y-3">
-                             <div className="flex justify-between items-center">
-                                 <span className="font-mono text-slate-500 font-bold w-8">$a0</span>
-                                 <span className="font-mono text-slate-700 font-medium">{regs.a0}</span>
+                     <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm ring-1 ring-slate-100">
+                         <div className="text-xs text-slate-400 font-bold mb-4 uppercase tracking-wider">通用寄存器</div>
+                         <div className="space-y-4">
+                             <div className="flex justify-between items-center border-b border-dashed border-slate-100 pb-2">
+                                 <div className="flex flex-col">
+                                     <span className="font-mono text-slate-700 font-bold text-base">$a0</span>
+                                     <span className="text-[10px] text-slate-400">参数</span>
+                                 </div>
+                                 <span className="font-mono text-slate-800 font-medium text-lg">{regs.a0}</span>
                              </div>
-                             <div className="flex justify-between items-center">
-                                 <span className="font-mono text-slate-500 font-bold w-8">$v0</span>
-                                 <span className={`font-mono font-bold ${regs.v0 !== 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{regs.v0}</span>
+                             <div className="flex justify-between items-center border-b border-dashed border-slate-100 pb-2">
+                                 <div className="flex flex-col">
+                                     <span className="font-mono text-slate-700 font-bold text-base">$v0</span>
+                                     <span className="text-[10px] text-slate-400">返回值</span>
+                                 </div>
+                                 <span className={`font-mono font-bold text-lg ${regs.v0 !== 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{regs.v0}</span>
                              </div>
-                             <div className="flex justify-between items-center">
-                                 <span className="font-mono text-slate-500 font-bold w-8">$s0</span>
-                                 <span className="font-mono text-slate-700 font-medium">{regs.s0}</span>
+                             <div className="flex justify-between items-center pt-1">
+                                 <div className="flex flex-col">
+                                     <span className="font-mono text-slate-700 font-bold text-base">$s0</span>
+                                     <span className="text-[10px] text-slate-400">保存寄存器</span>
+                                 </div>
+                                 <span className="font-mono text-slate-800 font-medium text-lg">{regs.s0}</span>
                              </div>
                          </div>
-                     </div>
-                     
-                     <div className="text-xs text-slate-500 mt-2 leading-relaxed p-3 bg-slate-50 rounded border border-slate-100">
-                        <span className="font-bold text-amber-600">JAL</span> (Jump And Link): 跳转同时将 PC+4 存入 $ra。<br/>
-                        <span className="font-bold text-amber-600">JR</span> (Jump Register): 只能跳到寄存器指定地址，通常是 $ra。
                      </div>
                  </div>
             </div>
 
-            {/* Col 3: Stack Memory */}
+            {/* Col 3: 栈内存 */}
             <div className="flex flex-col h-full bg-slate-50 relative">
-                <div className="p-3 bg-slate-100/50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider flex justify-between">
-                    <span>Stack Memory</span>
-                    <span>High Addr</span>
+                <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between items-center">
+                    <span className="flex items-center gap-2"><Layers className="w-4 h-4"/> 栈内存 (Stack)</span>
+                    <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 rounded">高地址</span>
                 </div>
                 
-                <div className="flex-1 p-6 relative flex flex-col items-center overflow-y-auto">
+                <div className="flex-1 p-8 relative flex flex-col items-center overflow-y-auto bg-slate-100/50">
                     {/* Stack Visualization */}
-                    <div className="w-48 space-y-1 relative">
+                    <div className="w-56 space-y-2 relative z-10">
                         {stack.map((slot) => (
                             <div key={slot.addr} className="flex items-center group relative">
                                 {/* Address Label (Left) */}
-                                <div className="absolute right-full mr-3 text-[10px] font-mono text-slate-400 top-3">
+                                <div className="absolute right-full mr-4 text-[11px] font-mono text-slate-400 top-3.5 tracking-tighter">
                                     {slot.addr.toString(16).toUpperCase().slice(-4)}
                                 </div>
                                 
                                 {/* Memory Slot */}
-                                <div className={`w-full h-12 border-2 rounded flex items-center justify-center font-mono text-sm relative transition-all duration-500 shadow-sm
+                                <div className={`w-full h-14 border-2 rounded-lg flex items-center justify-center font-mono text-sm relative transition-all duration-500 shadow-sm
                                     ${slot.addr >= regs.sp 
-                                        ? 'bg-white border-slate-300 text-slate-800' // Used/Active range
-                                        : 'bg-slate-100 border-slate-200 border-dashed text-slate-400' // Unused range
+                                        ? 'bg-white border-slate-400 text-slate-800' // Used/Active range
+                                        : 'bg-slate-200/50 border-slate-300 border-dashed text-slate-400' // Unused range
                                     }
-                                    ${slot.active ? 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-md ring-2 ring-emerald-100' : ''}
+                                    ${slot.active ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-lg ring-2 ring-emerald-200 scale-105 z-10' : ''}
                                 `}>
                                     {slot.addr >= regs.sp ? (
                                         <div className="flex flex-col items-center">
-                                            <span className="font-bold">{slot.val}</span>
-                                            {slot.label && <span className="text-[9px] text-slate-400 uppercase font-bold tracking-tight">{slot.label}</span>}
+                                            <span className="font-bold text-base">{slot.val}</span>
+                                            {slot.label && <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-1.5 rounded mt-0.5">{slot.label}</span>}
                                         </div>
                                     ) : (
-                                        <span className="text-[10px]">Unused</span>
+                                        <span className="text-[10px] italic">未使用 (Unused)</span>
                                     )}
                                 </div>
 
                                 {/* SP Pointer (Right Animation) */}
                                 {regs.sp === slot.addr && (
-                                    <div className="absolute left-full ml-3 flex items-center transition-all duration-500 animate-in slide-in-from-left-2">
-                                        <ArrowLeft className="w-5 h-5 text-emerald-500 mr-1" />
-                                        <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded border border-emerald-200 shadow-sm">$SP</span>
+                                    <div className="absolute left-full ml-4 flex items-center transition-all duration-500 animate-in slide-in-from-left-2 z-20">
+                                        <ArrowLeft className="w-6 h-6 text-emerald-600 mr-1" />
+                                        <span className="text-xs font-bold bg-emerald-600 text-white px-2.5 py-1 rounded shadow-md">$SP</span>
                                     </div>
                                 )}
                             </div>
                         ))}
                     </div>
                     
-                    <div className="mt-8 text-center opacity-50">
-                         <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Low Addr</div>
-                         <ArrowDown className="w-4 h-4 text-slate-400 mx-auto" />
+                    <div className="mt-12 text-center opacity-60">
+                         <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 font-bold">低地址 (Low Addr)</div>
+                         <ArrowDown className="w-4 h-4 text-slate-500 mx-auto" />
+                    </div>
+                    
+                    {/* Background Grid Lines for effect */}
+                    <div className="absolute inset-0 pointer-events-none opacity-[0.03]" 
+                         style={{backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
                     </div>
                 </div>
             </div>
         </div>
 
         {/* Footer Controls */}
-        <div className="p-4 bg-white border-t border-slate-200 flex justify-center gap-4 shadow-[0_-5px_15px_rgba(0,0,0,0.02)]">
-             <button onClick={()=>{setIsPlaying(false); executeStep(0); setCurrentStep(0)}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors" title="重置"><RotateCcw className="w-5 h-5"/></button>
-             <button onClick={()=>{setIsPlaying(false); setCurrentStep(p=>Math.max(0, p-1))}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"><ArrowLeft className="w-5 h-5"/></button>
+        <div className="p-4 bg-white border-t border-slate-200 flex justify-center gap-6 shadow-[0_-5px_20px_rgba(0,0,0,0.03)] z-10">
+             <button onClick={()=>{setIsPlaying(false); executeStep(0); setCurrentStep(0)}} className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-colors border border-transparent hover:border-slate-200" title="重置"><RotateCcw className="w-5 h-5"/></button>
+             <button onClick={()=>{setIsPlaying(false); setCurrentStep(p=>Math.max(0, p-1))}} className="p-3 hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 transition-colors border border-transparent hover:border-slate-200"><ArrowLeft className="w-5 h-5"/></button>
              
-             <button onClick={()=>setIsPlaying(!isPlaying)} className={`w-12 h-12 flex items-center justify-center rounded-full shadow-lg transition-all active:scale-95 active:shadow-sm ${isPlaying ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-                {isPlaying ? <Pause className="w-5 h-5 fill-current"/> : <Play className="w-5 h-5 fill-current ml-1"/>}
+             <button onClick={()=>setIsPlaying(!isPlaying)} className={`w-14 h-14 flex items-center justify-center rounded-full shadow-xl transition-all active:scale-95 active:shadow-md ${isPlaying ? 'bg-amber-100 text-amber-600 hover:bg-amber-200 border-2 border-amber-200' : 'bg-blue-600 hover:bg-blue-700 text-white border-4 border-blue-50'}`}>
+                {isPlaying ? <Pause className="w-6 h-6 fill-current"/> : <Play className="w-6 h-6 fill-current ml-1"/>}
              </button>
              
-             <button onClick={()=>{setIsPlaying(false); setCurrentStep(p=>Math.min(12, p+1))}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"><ArrowRight className="w-5 h-5"/></button>
+             <button onClick={()=>{setIsPlaying(false); setCurrentStep(p=>Math.min(12, p+1))}} className="p-3 hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 transition-colors border border-transparent hover:border-slate-200"><ArrowRight className="w-5 h-5"/></button>
              
              {/* Step Indicator */}
-             <div className="absolute right-6 top-1/2 -translate-y-1/2 hidden md:block text-xs font-mono text-slate-400 font-bold">
-                Step: {currentStep} / 12
+             <div className="absolute right-8 top-1/2 -translate-y-1/2 hidden md:block text-xs font-mono text-slate-400 font-bold bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                Step: <span className="text-slate-900 text-base">{currentStep}</span> / 12
              </div>
         </div>
       </div>
